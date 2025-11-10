@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import * as THREE from 'three';
 import Image from 'next/image';
+import TutorialOverlay from './TutorialOverlay';
 
 interface Pipette {
   id: string;
@@ -132,6 +133,7 @@ export default function PipetteSimulator() {
     depth: { value: '--', status: 'neutral' as 'correct' | 'incorrect' | 'neutral' },
     plunger: { value: 'Ready', status: 'neutral' as 'correct' | 'incorrect' | 'neutral' },
   });
+  const [showTutorial, setShowTutorial] = useState(true); // Start with tutorial shown immediately
 
   const sceneRef = useRef<{
     scene: THREE.Scene;
@@ -989,10 +991,30 @@ export default function PipetteSimulator() {
     startQuiz(quizData.incorrectQuestions);
   };
 
+  const handleTutorialComplete = () => {
+    setShowTutorial(false);
+    localStorage.setItem('pipettepro-tutorial-seen', 'true');
+  };
+
+  const handleTutorialSkip = () => {
+    setShowTutorial(false);
+    localStorage.setItem('pipettepro-tutorial-seen', 'true');
+  };
+
+
+
   const currentQuestion = quizData.questions[quizData.currentQuestionIndex];
 
   return (
-    <div className="flex flex-col md:flex-row h-screen bg-slate-200" style={{ fontFamily: "'Montserrat', sans-serif" }}>
+    <div className="flex flex-col md:flex-row h-screen bg-slate-200 relative" style={{ fontFamily: "'Montserrat', sans-serif" }}>
+      {/* Tutorial Overlay - Shows immediately when entering Live Lab Simulation */}
+      {showTutorial && (
+        <TutorialOverlay
+          onComplete={handleTutorialComplete}
+          onSkip={handleTutorialSkip}
+        />
+      )}
+
       {/* Main Simulation Area */}
       <div
         ref={labContainerRef}
