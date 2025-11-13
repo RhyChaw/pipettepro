@@ -1051,8 +1051,10 @@ export default function PipetteSimulator() {
 
   const endQuiz = () => {
     setShowQuizModal(false);
-    setShowQuizResults(true);
-    // Results will be shown in the modal
+    // Small delay to ensure modal closes before results open
+    setTimeout(() => {
+      setShowQuizResults(true);
+    }, 300);
   };
 
   const retryIncorrectQuestions = () => {
@@ -1670,14 +1672,14 @@ export default function PipetteSimulator() {
       {/* Quiz Modal */}
       {showQuizModal && quizData.questions.length > 0 && currentQuestion && (
         <div
-          className="fixed z-50 left-0 top-0 w-full h-full overflow-auto bg-[rgba(0,28,61,0.5)] flex justify-center items-center"
+          className="fixed z-50 left-0 top-0 w-full h-full overflow-auto bg-black/70 backdrop-blur-sm flex justify-center items-center p-4"
           onClick={() => setShowQuizModal(false)}
         >
           <div
-            className="bg-white/90 backdrop-blur-md border border-white/20 rounded-lg p-8 max-w-xl w-full shadow-2xl text-[#001C3D]"
+            className="bg-white rounded-2xl p-8 max-w-xl w-full shadow-2xl border-2 border-[#9448B0] text-[#001C3D]"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 id="quiz-question" className="text-xl font-bold mb-4">
+            <h2 id="quiz-question" className="text-2xl font-bold mb-6 text-[#001C3D]">
               {currentQuestion.question}
             </h2>
             <div id="quiz-options" className="space-y-4 mb-6">
@@ -1690,13 +1692,13 @@ export default function PipetteSimulator() {
                     key={index}
                     onClick={() => !quizFeedback.show && handleQuizAnswer(index)}
                     disabled={quizFeedback.show}
-                    className={`w-full text-left p-3 border rounded-md transition-colors ${
+                    className={`w-full text-left p-4 border-2 rounded-xl transition-all font-medium ${
                       isCorrect && quizFeedback.show
-                        ? 'bg-lime-200 border-lime-400'
+                        ? 'bg-green-500 text-white border-green-600 shadow-lg'
                         : isWrong
-                          ? 'bg-red-200 border-red-400'
-                          : 'border-gray-300 hover:bg-gray-100'
-                    } ${quizFeedback.show ? 'cursor-not-allowed' : ''}`}
+                          ? 'bg-red-500 text-white border-red-600 shadow-lg'
+                          : 'bg-white text-[#001C3D] border-gray-400 hover:border-[#9448B0] hover:bg-[#9448B0]/10 hover:shadow-md'
+                    } ${quizFeedback.show ? 'cursor-not-allowed' : 'cursor-pointer'}`}
                   >
                     {option}
                   </button>
@@ -1706,21 +1708,25 @@ export default function PipetteSimulator() {
             {quizFeedback.show && (
               <div
                 id="quiz-feedback"
-                className={`mt-6 p-4 rounded-md ${quizFeedback.isCorrect ? 'bg-lime-100' : 'bg-red-100'}`}
+                className={`mt-6 p-6 rounded-xl border-2 ${
+                  quizFeedback.isCorrect 
+                    ? 'bg-green-50 border-green-500' 
+                    : 'bg-red-50 border-red-500'
+                }`}
               >
                 <p
                   id="quiz-feedback-text"
-                  className="mb-4 text-left"
+                  className="mb-4 text-left font-semibold"
                   dangerouslySetInnerHTML={{
-                    __html: `<strong class="${quizFeedback.isCorrect ? 'text-green-700' : 'text-red-700'}">${
-                      quizFeedback.isCorrect ? 'Correct!' : 'Not quite...'
-                    }</strong><br>${quizFeedback.explanation}`,
+                    __html: `<strong class="${quizFeedback.isCorrect ? 'text-green-800' : 'text-red-800'} text-lg">${
+                      quizFeedback.isCorrect ? '✅ Correct!' : '❌ Not quite...'
+                    }</strong><br><span class="${quizFeedback.isCorrect ? 'text-green-900' : 'text-red-900'}">${quizFeedback.explanation}</span>`,
                   }}
                 ></p>
                 <button
                   id="quiz-next-btn"
                   onClick={nextQuestion}
-                  className="w-full bg-[#9448B0] text-white px-6 py-2 rounded-md hover:bg-[#A058C0]"
+                  className="w-full bg-[#9448B0] text-white px-6 py-3 rounded-xl hover:bg-[#A058C0] font-bold text-lg shadow-lg transition-all"
                 >
                   {quizData.currentQuestionIndex === quizData.questions.length - 1
                     ? 'Finish Quiz'
@@ -1735,11 +1741,11 @@ export default function PipetteSimulator() {
       {/* Quiz Results Modal */}
       {showQuizResults && (
         <div
-          className="fixed z-50 left-0 top-0 w-full h-full overflow-auto bg-[rgba(0,28,61,0.5)] flex justify-center items-center"
+          className="fixed z-50 left-0 top-0 w-full h-full overflow-auto bg-black/70 backdrop-blur-sm flex justify-center items-center p-4"
           onClick={() => setShowQuizResults(false)}
         >
           <div
-            className="bg-white/90 backdrop-blur-md border border-white/20 rounded-lg p-8 max-w-md w-full shadow-2xl text-center text-[#001C3D]"
+            className="bg-white rounded-2xl p-8 max-w-md w-full shadow-2xl border-2 border-[#9448B0] text-center text-[#001C3D] animate-fade-in"
             onClick={(e) => e.stopPropagation()}
           >
             <h2 id="quiz-results-title" className="text-2xl font-bold mb-2">
@@ -1793,10 +1799,10 @@ export default function PipetteSimulator() {
 
       {/* Contextual Quiz Popup */}
       {showContextualQuiz && contextualQuizQuestion && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white/95 backdrop-blur-xl rounded-2xl p-8 max-w-lg w-full shadow-2xl border border-white/20 animate-slide-in-right">
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-8 max-w-lg w-full shadow-2xl border-2 border-[#9448B0] animate-slide-in-right">
             <h3 className="text-2xl font-bold text-[#001C3D] mb-4">Quick Question</h3>
-            <p className="text-lg text-gray-700 mb-6">{contextualQuizQuestion.question}</p>
+            <p className="text-lg font-semibold text-[#001C3D] mb-6">{contextualQuizQuestion.question}</p>
             <div className="space-y-3 mb-6">
               {contextualQuizQuestion.options.map((option, idx) => {
                 const isCorrect = contextualQuizAnswer !== null && idx === contextualQuizQuestion.correct;
@@ -1822,12 +1828,12 @@ export default function PipetteSimulator() {
                         setContextualQuizAnswer(null);
                       }, correct ? 2000 : 1500);
                     }}
-                    className={`w-full text-left p-4 border-2 rounded-xl transition-all ${
+                    className={`w-full text-left p-4 border-2 rounded-xl transition-all font-medium ${
                       isCorrect
-                        ? 'bg-green-100 border-green-500'
+                        ? 'bg-green-500 text-white border-green-600 shadow-lg'
                         : isWrong
-                          ? 'bg-red-100 border-red-500'
-                          : 'bg-white border-gray-300 hover:border-[#9448B0] hover:bg-gray-50'
+                          ? 'bg-red-500 text-white border-red-600 shadow-lg'
+                          : 'bg-white text-[#001C3D] border-gray-400 hover:border-[#9448B0] hover:bg-[#9448B0]/10 hover:shadow-md'
                     }`}
                     disabled={contextualQuizAnswer !== null}
                   >
