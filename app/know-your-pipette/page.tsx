@@ -11,6 +11,9 @@ export default function KnowYourPipettePage() {
   const [error, setError] = useState<string | null>(null);
   const [showObjectButtons, setShowObjectButtons] = useState(false);
   const [freeRoamMode, setFreeRoamMode] = useState(false);
+  const [showWelcomeScreen, setShowWelcomeScreen] = useState(false);
+  const [showLearningPage, setShowLearningPage] = useState(false);
+  const [activeTab, setActiveTab] = useState('Pipette');
   const [debugInfo, setDebugInfo] = useState({
     cameraPosition: { x: 0, y: 0, z: 0 },
     modelPosition: { x: 0, y: 0, z: 0 },
@@ -27,7 +30,9 @@ export default function KnowYourPipettePage() {
     isAnimating: boolean;
     freeRoam: boolean;
     cameraVelocity: { x: number; y: number; z: number };
+    lockedRotation: boolean;
   } | null>(null);
+  const showLearningPageRef = useRef(false);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -206,8 +211,8 @@ export default function KnowYourPipettePage() {
             model.position.y = -center.y;
             model.position.z = -center.z;
             
-            // Set model scale to 1.5x as requested
-            model.scale.set(1.5, 1.5, 1.5);
+            // Set model scale to 5x as requested
+            model.scale.set(5, 5, 5);
             
             // Update matrix to apply scale changes
             model.updateMatrixWorld(true);
@@ -260,16 +265,27 @@ export default function KnowYourPipettePage() {
               if (progress < 1) {
                 requestAnimationFrame(animateCamera);
               } else {
-                // Animation complete
-                if (sceneRef.current) {
-                  sceneRef.current.isAnimating = false;
-                }
-                setShowObjectButtons(true);
+                // Animation complete - ensure camera is exactly at end position
+                camera.position.copy(endPos);
+                camera.lookAt(finalCenter);
+                camera.updateProjectionMatrix();
                 
-                // Update controls to match end position
+                // Update controls to match end position for initial view
                 const direction = new THREE.Vector3().subVectors(endPos, finalCenter).normalize();
                 controls.rotationY = Math.atan2(direction.x, direction.z);
                 controls.rotationX = Math.asin(direction.y);
+                
+                // Mark animation as complete
+                if (sceneRef.current) {
+                  sceneRef.current.isAnimating = false;
+                  // Keep camera locked - no movement allowed after animation
+                  sceneRef.current.freeRoam = false;
+                }
+                
+                // Show buttons after a small delay to ensure smooth transition
+                setTimeout(() => {
+                  setShowObjectButtons(true);
+                }, 100);
               }
             };
             
@@ -384,24 +400,27 @@ export default function KnowYourPipettePage() {
       const deltaY = clientY - previousMousePosition.y;
 
       const inFreeRoam = sceneRef.current?.freeRoam || false;
+      const lockedRotation = sceneRef.current?.lockedRotation || false;
       
-      // Don't allow camera movement if not in free roam (locked view like Pipette)
-      if (!inFreeRoam) {
-        // Camera is locked, don't update
+      // Allow camera rotation if in free roam OR locked rotation mode
+      if (inFreeRoam || lockedRotation) {
+        // Rotate camera based on mouse movement (first-person style)
+        const rotationSpeed = 0.002;
+        
+        // Update camera rotation directly (yaw and pitch)
+        camera.rotation.y -= deltaX * rotationSpeed; // Yaw (left/right)
+        camera.rotation.x -= deltaY * rotationSpeed; // Pitch (up/down)
+        
+        // Limit pitch to prevent flipping
+        camera.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, camera.rotation.x));
+        
+        // Update controls to match camera rotation for consistency
+        controls.rotationY = camera.rotation.y;
+        controls.rotationX = camera.rotation.x;
+      } else {
+        // Camera is completely locked, don't update
         previousMousePosition = { x: clientX, y: clientY };
         return;
-      }
-      
-      if (inFreeRoam) {
-        // Free roam mode: rotate camera based on mouse movement
-        const rotationSpeed = 0.005;
-        controls.rotationY += deltaX * rotationSpeed;
-        controls.rotationX += deltaY * rotationSpeed;
-        controls.rotationX = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, controls.rotationX));
-        
-        // Update camera rotation
-        const euler = new THREE.Euler(controls.rotationX, controls.rotationY, 0, 'YXZ');
-        camera.rotation.copy(euler);
       }
 
       previousMousePosition = { x: clientX, y: clientY };
@@ -418,16 +437,21 @@ export default function KnowYourPipettePage() {
       event.preventDefault();
       const inFreeRoam = sceneRef.current?.freeRoam || false;
       
-      if (inFreeRoam) {
-        // In free roam, wheel moves camera forward/backward
-        const moveSpeed = 0.1;
-        const direction = new THREE.Vector3(0, 0, -1);
-        direction.applyQuaternion(camera.quaternion);
-        camera.position.add(direction.multiplyScalar(event.deltaY * moveSpeed * 0.01));
+      const lockedRotation = sceneRef.current?.lockedRotation || false;
+      if (inFreeRoam && !lockedRotation) {
+        // In free roam (not locked), wheel moves camera forward/backward in camera's facing direction
+        const moveSpeed = 0.5;
+        const forward = new THREE.Vector3(0, 0, -1);
+        forward.applyQuaternion(camera.quaternion);
+        const moveAmount = event.deltaY > 0 ? -moveSpeed : moveSpeed;
+        camera.position.add(forward.multiplyScalar(moveAmount));
+      } else if (lockedRotation) {
+        // In locked rotation mode, disable wheel movement
+        // Do nothing - camera stays in place
       } else {
         // Normal zoom
         controls.zoom += event.deltaY * -0.001;
-        controls.zoom = Math.max(0.5, Math.min(3, controls.zoom));
+        controls.zoom = Math.max(0.1, Math.min(10, controls.zoom)); // Increased max zoom for better zooming capability
       }
     };
     
@@ -464,6 +488,7 @@ export default function KnowYourPipettePage() {
       isAnimating: false,
       freeRoam: false,
       cameraVelocity: { x: 0, y: 0, z: 0 },
+      lockedRotation: false,
     };
 
     // Animation loop
@@ -473,39 +498,44 @@ export default function KnowYourPipettePage() {
       // Only update camera position if not animating (check state via closure)
       const currentlyAnimating = sceneRef.current?.isAnimating || false;
       const inFreeRoam = sceneRef.current?.freeRoam || false;
+      const lockedRotation = sceneRef.current?.lockedRotation || false;
       
-      // Don't update camera if it's locked (Pipette view) or in free roam
-      if (!currentlyAnimating && !inFreeRoam) {
-        // For classroom model, use appropriate distance
-        const baseDistance = 12 / controls.zoom; // Good distance for classroom viewing
-        const x = modelCenter.x + Math.sin(controls.rotationY) * Math.cos(controls.rotationX) * baseDistance;
-        const y = modelCenter.y + Math.sin(controls.rotationX) * baseDistance + 1; // Add height offset
-        const z = modelCenter.z + Math.cos(controls.rotationY) * Math.cos(controls.rotationX) * baseDistance;
-        
-        camera.position.set(x, y, z);
-        camera.lookAt(modelCenter); // Look at center of model
+      // After animation completes, camera stays locked in place
+      // Only allow movement if in free roam mode or locked rotation mode
+      if (!currentlyAnimating && !inFreeRoam && !lockedRotation) {
+        // Camera is locked after animation - do nothing, keep position
       }
       
-      // If camera is locked (Pipette view), keep it at the locked position
-      // The camera position is set in handleObjectClick and won't be updated here
+      // If camera is in locked rotation mode, enforce position every frame
+      if (lockedRotation) {
+        // Lock camera to exact position (prevent any drift)
+        const lockedPosition = new THREE.Vector3(8.68, -10.72, -6.88);
+        camera.position.copy(lockedPosition);
+      }
       
-      // In free roam mode, handle keyboard movement
-      if (inFreeRoam) {
-        const moveSpeed = 0.1;
-        const direction = new THREE.Vector3();
+      // In free roam mode, handle keyboard movement (but not in locked rotation mode)
+      if (inFreeRoam && !sceneRef.current?.lockedRotation) {
+        const moveSpeed = 0.15;
+        const moveVector = new THREE.Vector3();
         
-        if (keysPressed.has('w')) direction.z -= 1;
-        if (keysPressed.has('s')) direction.z += 1;
-        if (keysPressed.has('a')) direction.x -= 1;
-        if (keysPressed.has('d')) direction.x += 1;
-        if (keysPressed.has('q')) direction.y += 1;
-        if (keysPressed.has('e')) direction.y -= 1;
+        // Get camera's forward and right vectors
+        const forward = new THREE.Vector3(0, 0, -1);
+        const right = new THREE.Vector3(1, 0, 0);
+        forward.applyQuaternion(camera.quaternion);
+        right.applyQuaternion(camera.quaternion);
         
-        if (direction.length() > 0) {
-          direction.normalize();
-          direction.multiplyScalar(moveSpeed);
-          direction.applyQuaternion(camera.quaternion);
-          camera.position.add(direction);
+        // Calculate movement direction based on camera orientation
+        if (keysPressed.has('w')) moveVector.add(forward);
+        if (keysPressed.has('s')) moveVector.sub(forward);
+        if (keysPressed.has('a')) moveVector.sub(right);
+        if (keysPressed.has('d')) moveVector.add(right);
+        if (keysPressed.has('q')) moveVector.y += 1; // Up
+        if (keysPressed.has('e')) moveVector.y -= 1; // Down
+        
+        if (moveVector.length() > 0) {
+          moveVector.normalize();
+          moveVector.multiplyScalar(moveSpeed);
+          camera.position.add(moveVector);
         }
       }
 
@@ -564,8 +594,10 @@ export default function KnowYourPipettePage() {
         }));
       }
 
-      // Always render the scene
-      renderer.render(scene, camera);
+      // Only render if learning page is not shown
+      if (!showLearningPageRef.current) {
+        renderer.render(scene, camera);
+      }
     };
 
     animate();
@@ -602,78 +634,178 @@ export default function KnowYourPipettePage() {
     };
   }, []);
 
-  // Handle object button click - scale model to 3x and enable free roam
-  const handleObjectClick = (objectName: string) => {
-    if (!sceneRef.current || !sceneRef.current.model) return;
-    
-    const model = sceneRef.current.model;
-    const camera = sceneRef.current.camera;
-    
-    // Scale model to 3x in all dimensions
-    model.scale.set(3, 3, 3);
-    
-    // Special handling for Pipette - lock camera to specific position
-    if (objectName === 'Pipette') {
-      // First update matrix after scaling
-      model.updateMatrixWorld(true);
-      
-      // Get current bounding box after scaling
-      const currentBox = new THREE.Box3().setFromObject(model);
-      const currentCenter = currentBox.getCenter(new THREE.Vector3());
-      const targetModelPos = new THREE.Vector3(3.92, -10.27, -1.07);
-      
-      // Calculate offset needed to move model center to target position
-      const offset = new THREE.Vector3().subVectors(targetModelPos, currentCenter);
-      model.position.add(offset);
-      model.updateMatrixWorld(true);
-      
-      // Verify final position
-      const finalBox = new THREE.Box3().setFromObject(model);
-      const finalCenter = finalBox.getCenter(new THREE.Vector3());
-      
-      // Set camera position and look at model center
-      camera.position.set(3.14, -6.85, -4.83);
-      camera.lookAt(finalCenter);
-      camera.updateProjectionMatrix();
-      
-      // Disable free roam for locked view
-      setFreeRoamMode(false);
-      if (sceneRef.current) {
-        sceneRef.current.freeRoam = false;
+  // Update ref when showLearningPage changes to stop/start rendering
+  useEffect(() => {
+    showLearningPageRef.current = showLearningPage;
+    if (sceneRef.current?.renderer) {
+      if (showLearningPage) {
+        // Hide the canvas
+        sceneRef.current.renderer.domElement.style.display = 'none';
+      } else {
+        // Show the canvas
+        sceneRef.current.renderer.domElement.style.display = 'block';
       }
-      
-      // Update controls to match camera position
-      const direction = new THREE.Vector3().subVectors(camera.position, finalCenter).normalize();
-      sceneRef.current.controls.rotationY = Math.atan2(direction.x, direction.z);
-      sceneRef.current.controls.rotationX = Math.asin(direction.y);
-      
-      console.log(`Clicked ${objectName}. Model scaled to 3x. Camera locked to position.`);
-      console.log('Camera position:', { x: 3.14, y: -6.85, z: -4.83 });
-      console.log('Model center position:', { x: finalCenter.x, y: finalCenter.y, z: finalCenter.z });
-      console.log('Target model position:', { x: 3.92, y: -10.27, z: -1.07 });
-    } else {
-      // For other objects, enable free roam
-      model.updateMatrixWorld(true);
-      
-      // Enable free roam mode
-      setFreeRoamMode(true);
-      if (sceneRef.current) {
-        sceneRef.current.freeRoam = true;
-      }
-      
-      console.log(`Clicked ${objectName}. Model scaled to 3x. Free roam enabled.`);
-      console.log('Current camera position:', {
-        x: camera.position.x,
-        y: camera.position.y,
-        z: camera.position.z,
-      });
-      console.log('Current camera rotation:', {
-        x: camera.rotation.x * (180 / Math.PI),
-        y: camera.rotation.y * (180 / Math.PI),
-        z: camera.rotation.z * (180 / Math.PI),
-      });
     }
+  }, [showLearningPage]);
+
+  // Handle object button click - show welcome screen
+  const handleObjectClick = () => {
+    // Show welcome screen when any button is clicked
+    setShowWelcomeScreen(true);
   };
+
+  // Handle welcome screen responses
+  const handleWelcomeYes = () => {
+    setShowWelcomeScreen(false);
+    setShowLearningPage(true);
+  };
+
+  const handleWelcomeNo = () => {
+    setShowWelcomeScreen(false);
+    // Reset to show the 3D room view
+    setShowLearningPage(false);
+  };
+
+  // Show learning page if enabled
+  if (showLearningPage) {
+    return (
+      <div className="min-h-screen" style={{ backgroundImage: 'linear-gradient(to bottom right, #9448B0, #332277, #001C3D)' }}>
+        {/* Navbar */}
+        <nav className="bg-[#9448B0]/95 backdrop-blur-sm border-b border-[#D8F878]/30 p-4 shadow-lg">
+          <div className="container mx-auto flex items-center justify-between">
+            <button
+              onClick={() => {
+                setShowLearningPage(false);
+                setShowWelcomeScreen(false);
+              }}
+              className="flex items-center text-white hover:text-[#D8F878] transition-colors"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2">
+                <path d="m12 19-7-7 7-7" />
+                <path d="M19 12H5" />
+              </svg>
+              <span className="font-semibold">Back to 3D View</span>
+            </button>
+            <h1 className="text-2xl font-bold text-white">
+              Know Your <span className="text-[#D8F878]">Pipette</span>
+            </h1>
+            <div className="w-32"></div>
+          </div>
+        </nav>
+
+        {/* Navigation Tabs */}
+        <div className="bg-white/10 backdrop-blur-sm border-b border-white/20">
+          <div className="container mx-auto px-4 py-2">
+            <div className="flex space-x-2 overflow-x-auto">
+              {['Pipette', 'Tip', 'Box', 'Source Beaker', 'Destination Beaker', 'Waste Box'].map((item) => (
+                <button
+                  key={item}
+                  onClick={() => setActiveTab(item)}
+                  className={`px-4 py-2 rounded-lg font-semibold whitespace-nowrap transition-colors ${
+                    activeTab === item
+                      ? 'bg-white text-[#001C3D] shadow-lg'
+                      : 'bg-white/20 hover:bg-white/30 text-white'
+                  }`}
+                >
+                  {item}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="container mx-auto px-4 py-8 max-w-4xl">
+          <div className="bg-white/95 backdrop-blur-sm rounded-xl p-8 shadow-2xl">
+            {/* Tab Content */}
+            {activeTab === 'Pipette' && (
+              <div>
+                <h2 className="text-3xl font-bold text-[#001C3D] mb-6">Pipette</h2>
+                <div className="space-y-4">
+                  <p className="text-gray-700 text-lg leading-relaxed">
+                    The pipette is the main instrument used to aspirate and dispense precise volumes of liquid. 
+                    It consists of a body, plunger with two stops, volume adjustment dial, and a tip ejector. 
+                    Different pipettes are designed for specific volume ranges (e.g., 2µL, 10µL, 200µL, 1000µL).
+                  </p>
+                  {/* Placeholder for images/models - add here later */}
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'Tip' && (
+              <div>
+                <h2 className="text-3xl font-bold text-[#001C3D] mb-6">Tip</h2>
+                <div className="space-y-4">
+                  <p className="text-gray-700 text-lg leading-relaxed">
+                    Disposable tips are attached to the pipette to prevent contamination. They come in various types: 
+                    standard tips for general use, low-retention tips for viscous liquids, and filter tips for 
+                    sensitive applications. Always use a fresh tip for each sample to ensure accuracy and prevent cross-contamination.
+                  </p>
+                  {/* Placeholder for images/models - add here later */}
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'Box' && (
+              <div>
+                <h2 className="text-3xl font-bold text-[#001C3D] mb-6">Box</h2>
+                <div className="space-y-4">
+                  <p className="text-gray-700 text-lg leading-relaxed">
+                    Tip boxes contain sterile, disposable pipette tips. They are color-coded to match specific pipette 
+                    sizes and are designed to maintain sterility. Tips should be loaded into the pipette directly from 
+                    the box without touching them to maintain aseptic technique.
+                  </p>
+                  {/* Placeholder for images/models - add here later */}
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'Source Beaker' && (
+              <div>
+                <h2 className="text-3xl font-bold text-[#001C3D] mb-6">Source Beaker</h2>
+                <div className="space-y-4">
+                  <p className="text-gray-700 text-lg leading-relaxed">
+                    The source container holds the liquid you want to transfer. It can be a beaker, test tube, 
+                    microcentrifuge tube, or any container with the liquid sample. When aspirating, immerse the 
+                    tip just below the liquid surface (2-3mm) to ensure accurate volume measurement.
+                  </p>
+                  {/* Placeholder for images/models - add here later */}
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'Destination Beaker' && (
+              <div>
+                <h2 className="text-3xl font-bold text-[#001C3D] mb-6">Destination Beaker</h2>
+                <div className="space-y-4">
+                  <p className="text-gray-700 text-lg leading-relaxed">
+                    The destination container is where you dispense the liquid. It should be clean and appropriate 
+                    for the volume being transferred. When dispensing, touch the tip to the inner wall of the 
+                    container and use the blow-out function (second stop) to ensure all liquid is expelled.
+                  </p>
+                  {/* Placeholder for images/models - add here later */}
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'Waste Box' && (
+              <div>
+                <h2 className="text-3xl font-bold text-[#001C3D] mb-6">Waste Box</h2>
+                <div className="space-y-4">
+                  <p className="text-gray-700 text-lg leading-relaxed">
+                    The waste container is used to safely dispose of used pipette tips. It should be clearly marked 
+                    and positioned conveniently near your workspace. Always eject tips into the waste container 
+                    immediately after use to prevent contamination and maintain a clean work environment.
+                  </p>
+                  {/* Placeholder for images/models - add here later */}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -688,7 +820,7 @@ export default function KnowYourPipettePage() {
       <div className="bg-[#9448B0]/95 backdrop-blur-sm border-b border-[#D8F878]/30 p-4 absolute top-0 left-0 right-0 z-30 shadow-lg">
         <div className="container mx-auto flex items-center justify-between">
           <Link
-            href="/"
+            href="/home"
             className="flex items-center text-white hover:text-[#D8F878] transition-colors"
           >
             <svg
@@ -715,39 +847,40 @@ export default function KnowYourPipettePage() {
         </div>
       </div>
 
-      {/* 3D Viewer - Full screen */}
-      <div className="relative z-10" style={{ height: '100vh', backgroundColor: 'transparent' }}>
-        <div
-          ref={containerRef}
-          className="w-full h-full relative z-20"
-          style={{ cursor: 'grab', position: 'relative', backgroundColor: 'transparent' }}
-        />
+      {/* 3D Viewer - Full screen - Hide when learning page is shown */}
+      {!showLearningPage && (
+        <div className="relative z-10" style={{ height: '100vh', backgroundColor: 'transparent' }}>
+          <div
+            ref={containerRef}
+            className="w-full h-full relative z-20"
+            style={{ cursor: 'grab', position: 'relative', backgroundColor: 'transparent' }}
+          />
         
-        {/* Loading Overlay */}
-        {isLoading && (
-          <div className="absolute inset-0 bg-white/80 backdrop-blur-sm flex items-center justify-center z-30">
-            <div className="text-center">
-              <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-[#9448B0] mb-4"></div>
-              <p className="text-[#001C3D] font-semibold">Loading 3D Model...</p>
+          {/* Loading Overlay */}
+          {isLoading && (
+            <div className="absolute inset-0 bg-white/80 backdrop-blur-sm flex items-center justify-center z-30">
+              <div className="text-center">
+                <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-[#9448B0] mb-4"></div>
+                <p className="text-[#001C3D] font-semibold">Loading 3D Model...</p>
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Error Overlay */}
-        {error && (
-          <div className="absolute inset-0 bg-white/80 backdrop-blur-sm flex items-center justify-center z-30">
-            <div className="text-center bg-white rounded-lg p-6 shadow-xl max-w-md mx-4">
-              <p className="text-red-600 font-semibold mb-2">Error Loading Model</p>
-              <p className="text-gray-700 text-sm mb-4">{error}</p>
-              <button
-                onClick={() => window.location.reload()}
-                className="bg-[#9448B0] text-white px-4 py-2 rounded-lg hover:bg-[#A058C0] transition-colors"
-              >
-                Retry
-              </button>
+          {/* Error Overlay */}
+          {error && (
+            <div className="absolute inset-0 bg-white/80 backdrop-blur-sm flex items-center justify-center z-30">
+              <div className="text-center bg-white rounded-lg p-6 shadow-xl max-w-md mx-4">
+                <p className="text-red-600 font-semibold mb-2">Error Loading Model</p>
+                <p className="text-gray-700 text-sm mb-4">{error}</p>
+                <button
+                  onClick={() => window.location.reload()}
+                  className="bg-[#9448B0] text-white px-4 py-2 rounded-lg hover:bg-[#A058C0] transition-colors"
+                >
+                  Retry
+                </button>
+              </div>
             </div>
-          </div>
-        )}
+          )}
         
         {/* Instructions Overlay - COMMENTED OUT */}
         {/* {!isLoading && !error && (
@@ -761,47 +894,26 @@ export default function KnowYourPipettePage() {
           </div>
         )} */}
 
-        {/* Object Buttons - Show after animation */}
-        {showObjectButtons && !isLoading && !error && (
-          <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 z-40">
-            <div className="bg-white/95 backdrop-blur-sm rounded-xl p-4 shadow-2xl border border-white/20">
-              <h3 className="text-lg font-bold text-[#001C3D] mb-4 text-center">Explore Objects</h3>
-              <div className="grid grid-cols-3 gap-3 min-w-[500px]">
+        {/* Welcome Screen Overlay */}
+        {showWelcomeScreen && (
+          <div className="absolute inset-0 bg-white z-50 flex items-center justify-center">
+            <div className="text-center max-w-2xl px-8">
+              <h2 className="text-4xl font-bold text-[#001C3D] mb-6">
+                Welcome to learn about the parts required in a pipetting system
+              </h2>
+              <p className="text-2xl text-gray-700 mb-8">Are you ready?</p>
+              <div className="flex justify-center gap-6">
                 <button
-                  onClick={() => handleObjectClick('Pipette')}
-                  className="bg-gradient-to-br from-[#9448B0] to-[#332277] text-white font-semibold py-3 px-4 rounded-lg shadow-md hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300"
+                  onClick={handleWelcomeYes}
+                  className="bg-gradient-to-r from-[#9448B0] to-[#332277] text-white font-bold py-4 px-12 rounded-lg shadow-xl hover:shadow-2xl transform hover:-translate-y-1 transition-all duration-300 text-xl"
                 >
-                  Pipette
+                  Yes
                 </button>
                 <button
-                  onClick={() => handleObjectClick('Tip')}
-                  className="bg-gradient-to-br from-[#E47CB8] to-[#9448B0] text-white font-semibold py-3 px-4 rounded-lg shadow-md hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300"
+                  onClick={handleWelcomeNo}
+                  className="bg-gray-300 text-[#001C3D] font-bold py-4 px-12 rounded-lg shadow-xl hover:shadow-2xl transform hover:-translate-y-1 transition-all duration-300 text-xl"
                 >
-                  Tip
-                </button>
-                <button
-                  onClick={() => handleObjectClick('Box')}
-                  className="bg-gradient-to-br from-[#D8F878] to-[#22c55e] text-[#001C3D] font-semibold py-3 px-4 rounded-lg shadow-md hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300"
-                >
-                  Box
-                </button>
-                <button
-                  onClick={() => handleObjectClick('Source Beaker')}
-                  className="bg-gradient-to-br from-[#3b82f6] to-[#1e40af] text-white font-semibold py-3 px-4 rounded-lg shadow-md hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300"
-                >
-                  Source Beaker
-                </button>
-                <button
-                  onClick={() => handleObjectClick('Destination Beaker')}
-                  className="bg-gradient-to-br from-[#60a5fa] to-[#3b82f6] text-white font-semibold py-3 px-4 rounded-lg shadow-md hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300"
-                >
-                  Destination Beaker
-                </button>
-                <button
-                  onClick={() => handleObjectClick('Waste Box')}
-                  className="bg-gradient-to-br from-[#ef4444] to-[#dc2626] text-white font-semibold py-3 px-4 rounded-lg shadow-md hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300"
-                >
-                  Waste Box
+                  No
                 </button>
               </div>
             </div>
@@ -809,7 +921,7 @@ export default function KnowYourPipettePage() {
         )}
 
         {/* Debug Info Panel */}
-        {!isLoading && !error && (
+        {!isLoading && !error && !showWelcomeScreen && (
           <div className="absolute top-4 right-4 bg-white/90 backdrop-blur-sm rounded-lg p-4 shadow-lg max-w-sm z-40 text-xs">
             <h3 className="font-bold text-[#001C3D] mb-3 text-sm">Debug Info</h3>
             <div className="space-y-2 text-gray-700">
@@ -848,7 +960,60 @@ export default function KnowYourPipettePage() {
             </div>
           </div>
         )}
-      </div>
+        </div>
+      )}
+
+      {/* Object Buttons - Show after animation - Outside 3D viewer so they can show on learning page */}
+      {showObjectButtons && !isLoading && !error && !showWelcomeScreen && (
+        <div 
+          className="absolute bottom-8 left-1/2 transform -translate-x-1/2 z-40"
+          style={{
+            animation: 'fadeIn 0.5s ease-out',
+          }}
+        >
+          <div className="bg-white/95 backdrop-blur-sm rounded-xl p-4 shadow-2xl border border-white/20">
+            <h3 className="text-lg font-bold text-[#001C3D] mb-4 text-center">Explore Objects</h3>
+            <div className="grid grid-cols-3 gap-3 min-w-[500px]">
+              <button
+                onClick={handleObjectClick}
+                className="bg-gradient-to-br from-[#9448B0] to-[#332277] text-white font-semibold py-3 px-4 rounded-lg shadow-md hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300"
+              >
+                Pipette
+              </button>
+              <button
+                onClick={handleObjectClick}
+                className="bg-gradient-to-br from-[#E47CB8] to-[#9448B0] text-white font-semibold py-3 px-4 rounded-lg shadow-md hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300"
+              >
+                Tip
+              </button>
+              <button
+                onClick={handleObjectClick}
+                className="bg-gradient-to-br from-[#D8F878] to-[#22c55e] text-[#001C3D] font-semibold py-3 px-4 rounded-lg shadow-md hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300"
+              >
+                Box
+              </button>
+              <button
+                onClick={handleObjectClick}
+                className="bg-gradient-to-br from-[#3b82f6] to-[#1e40af] text-white font-semibold py-3 px-4 rounded-lg shadow-md hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300"
+              >
+                Source Beaker
+              </button>
+              <button
+                onClick={handleObjectClick}
+                className="bg-gradient-to-br from-[#60a5fa] to-[#3b82f6] text-white font-semibold py-3 px-4 rounded-lg shadow-md hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300"
+              >
+                Destination Beaker
+              </button>
+              <button
+                onClick={handleObjectClick}
+                className="bg-gradient-to-br from-[#ef4444] to-[#dc2626] text-white font-semibold py-3 px-4 rounded-lg shadow-md hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300"
+              >
+                Waste Box
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -148,10 +148,10 @@ export default function TutorialOverlay({ onComplete, onSkip }: TutorialOverlayP
       </div>
 
       {/* Tutorial Cloud/Speech Bubble */}
-      <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 w-full max-w-2xl px-4 z-10">
+      <div className="absolute top-8 left-8 w-full max-w-2xl z-10">
         <div className="relative bg-white rounded-3xl shadow-2xl p-6 border-4 border-[#D8F878]">
           {/* Mascot Image */}
-          <div className="absolute -top-16 left-1/2 transform -translate-x-1/2">
+          <div className="absolute -top-12 -left-12">
             <div className="relative w-24 h-24">
               <Image
                 src="/mascot.png"
@@ -166,7 +166,7 @@ export default function TutorialOverlay({ onComplete, onSkip }: TutorialOverlayP
           </div>
 
           {/* Cloud decoration */}
-          <div className="absolute -top-12 left-1/2 transform -translate-x-1/2 w-32 h-16 bg-white rounded-full opacity-20 blur-xl" />
+          <div className="absolute -top-8 -left-8 w-32 h-16 bg-white rounded-full opacity-20 blur-xl" />
 
           {/* Content */}
           <div className="mt-8">
