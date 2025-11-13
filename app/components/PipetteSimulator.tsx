@@ -134,6 +134,24 @@ export default function PipetteSimulator() {
     plunger: { value: 'Ready', status: 'neutral' as 'correct' | 'incorrect' | 'neutral' },
   });
   const [showTutorial, setShowTutorial] = useState(true); // Start with tutorial shown immediately
+  const [feedbackConsole, setFeedbackConsole] = useState<string>('');
+  const [showContextualQuiz, setShowContextualQuiz] = useState(false);
+  const [contextualQuizQuestion, setContextualQuizQuestion] = useState<{ question: string; options: string[]; correct: number; explanation: string } | null>(null);
+  const [showMistakeSidebar, setShowMistakeSidebar] = useState(false);
+  const [mistakeScenario, setMistakeScenario] = useState<{ title: string; question: string; options: string[]; correct: number; tip: string } | null>(null);
+  const [pipetteSelectionFeedback, setPipetteSelectionFeedback] = useState<'correct' | 'wrong' | null>(null);
+  const [showConfetti, setShowConfetti] = useState(false);
+  const [contextualQuizAnswer, setContextualQuizAnswer] = useState<number | null>(null);
+
+  // Auto-clear feedback console after 5 seconds
+  useEffect(() => {
+    if (feedbackConsole) {
+      const timer = setTimeout(() => {
+        setFeedbackConsole('');
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [feedbackConsole]);
 
   const sceneRef = useRef<{
     scene: THREE.Scene;
@@ -618,6 +636,9 @@ export default function PipetteSimulator() {
     const { gameState, plungerMesh, tipBoxes, pipetteTipMesh } = sceneRef.current;
 
     if (gameState.targetVolume > pipette.max || gameState.targetVolume < pipette.min) {
+      setPipetteSelectionFeedback('wrong');
+      setFeedbackConsole(`❌ Wrong pipette for this volume. Try again!`);
+      setTimeout(() => setPipetteSelectionFeedback(null), 2000);
       showFeedback(
         'Incorrect Pipette',
         `This ${pipette.name} pipette has a range of ${pipette.min}-${pipette.max} µL. It's not suitable for ${gameState.targetVolume} µL.`,
@@ -628,6 +649,13 @@ export default function PipetteSimulator() {
 
     gameState.selectedPipette = pipette;
     setSelectedPipetteId(pipette.id);
+    setPipetteSelectionFeedback('correct');
+    setFeedbackConsole(`✅ CORRECT: ${pipette.name} selected!`);
+    setShowConfetti(true);
+    setTimeout(() => {
+      setShowConfetti(false);
+      setPipetteSelectionFeedback(null);
+    }, 2000);
 
     if (plungerMesh && pipette.color) {
       const mat = plungerMesh.material as THREE.MeshStandardMaterial;
@@ -724,7 +752,29 @@ export default function PipetteSimulator() {
       }
       animateLiquidTransfer(sourceContainer.liquidMesh, 'out');
       animateLiquidTransfer(pipetteTipMesh.tipLiquid, 'in');
+      setFeedbackConsole(`✅ Correct angle maintained. ${gameState.targetVolume} µL aspirated successfully!`);
       showFeedback('Success!', `${gameState.targetVolume} µL aspirated.`, 'correct', true);
+      
+      // Trigger contextual quiz after successful aspiration
+      setTimeout(() => {
+        const contextualQuestions = [
+          {
+            question: 'Why is maintaining the correct angle important while pipetting?',
+            options: [
+              'It looks more professional',
+              'It ensures accurate volume measurement and prevents liquid from clinging to the tip',
+              'It makes pipetting faster',
+              'It prevents the pipette from breaking'
+            ],
+            correct: 1,
+            explanation: 'Correct! Maintaining a vertical angle ensures accurate volume measurement and prevents liquid from clinging to the outside of the tip.'
+          }
+        ];
+        const q = contextualQuestions[Math.floor(Math.random() * contextualQuestions.length)];
+        setContextualQuizQuestion(q);
+        setContextualQuizAnswer(null);
+        setShowContextualQuiz(true);
+      }, 1500);
     } else {
       gameState.liquidInPipette = gameState.targetVolume * 0.9;
       gameState.dispensedStop1 = false;
@@ -734,6 +784,25 @@ export default function PipetteSimulator() {
       }
       animateLiquidTransfer(sourceContainer.liquidMesh, 'out', 0.9);
       animateLiquidTransfer(pipetteTipMesh.tipLiquid, 'in', 0.9);
+      setFeedbackConsole(`⚠️ Too deep — reduce immersion depth. Only ${gameState.liquidInPipette.toFixed(1)} µL aspirated.`);
+      
+      // Trigger mistake scenario
+      setTimeout(() => {
+        setMistakeScenario({
+          title: 'Oops! You introduced air bubbles.',
+          question: 'What should you do?',
+          options: [
+            'Continue with the current sample',
+            'Re-aspirate slowly to avoid air bubbles',
+            'Discard everything and start over',
+            'Use a different pipette'
+          ],
+          correct: 1,
+          tip: 'Pro Tip: When immersion depth is incorrect, re-aspirate slowly to avoid introducing air bubbles into your sample.'
+        });
+        setShowMistakeSidebar(true);
+      }, 1000);
+      
       showFeedback(
         'Aspiration Error',
         `Immersion depth is ${depthStatus}. This resulted in aspirating only ${gameState.liquidInPipette.toFixed(1)} µL.`,
@@ -1025,6 +1094,148 @@ export default function PipetteSimulator() {
           backgroundImage: 'radial-gradient(circle, #332277, #001C3D)',
         }}
       >
+        {/* Floating HUD Indicators - Top Left */}
+        <div className="absolute top-4 left-4 z-20 space-y-2">
+          {/* Angle Indicator */}
+          <div className="bg-white/10 backdrop-blur-xl rounded-xl p-3 border border-white/20 shadow-lg">
+            <div className="flex items-center gap-3">
+              <div className="relative w-12 h-12">
+                {(() => {
+                  const circumference = 2 * Math.PI * 20;
+                  const angleValue = feedbackStates.angle.value === '--' ? 0 : parseFloat(feedbackStates.angle.value.replace('°', '')) || 0;
+                  const progress = angleValue / 90;
+                  const strokeDashoffset = circumference * (1 - progress);
+                  const strokeColor = feedbackStates.angle.status === 'correct' ? '#D8F878' : feedbackStates.angle.status === 'incorrect' ? '#E47CB8' : '#9ca3af';
+                  
+                  return (
+                    <svg className="transform -rotate-90 w-12 h-12">
+                      <circle
+                        cx="24"
+                        cy="24"
+                        r="20"
+                        stroke="rgba(255,255,255,0.2)"
+                        strokeWidth="4"
+                        fill="none"
+                      />
+                      <circle
+                        cx="24"
+                        cy="24"
+                        r="20"
+                        stroke={strokeColor}
+                        strokeWidth="4"
+                        fill="none"
+                        strokeDasharray={circumference}
+                        strokeDashoffset={strokeDashoffset}
+                        strokeLinecap="round"
+                        className="transition-all duration-300"
+                      />
+                    </svg>
+                  );
+                })()}
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <span className="text-xs font-bold text-white">
+                    {feedbackStates.angle.value === '--' ? '--' : feedbackStates.angle.value.replace('°', '')}
+                  </span>
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-gray-300">Angle</div>
+                <div className={`text-sm font-semibold ${
+                  feedbackStates.angle.status === 'correct' ? 'text-[#D8F878]' : 
+                  feedbackStates.angle.status === 'incorrect' ? 'text-[#E47CB8]' : 'text-gray-400'
+                }`}>
+                  {feedbackStates.angle.value}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Depth Indicator */}
+          <div className="bg-white/10 backdrop-blur-xl rounded-xl p-3 border border-white/20 shadow-lg">
+            <div className="flex items-center gap-3">
+              <div className="relative w-12 h-12 flex items-end justify-center">
+                {(() => {
+                  const depthValue = feedbackStates.depth.value === '--' ? 0 : parseFloat(feedbackStates.depth.value.replace('mm', '')) || 0;
+                  const depthPercent = Math.min(100, (depthValue / 5) * 100);
+                  const depthColor = feedbackStates.depth.status === 'correct' ? 'bg-[#D8F878]' : 
+                    feedbackStates.depth.status === 'incorrect' ? 'bg-[#E47CB8]' : 'bg-gray-500';
+                  
+                  return (
+                    <div className="w-4 h-12 bg-gray-700/50 rounded-full overflow-hidden border border-white/20">
+                      <div 
+                        className={`w-full rounded-full transition-all duration-300 ${depthColor}`}
+                        style={{ height: `${depthPercent}%` }}
+                      />
+                    </div>
+                  );
+                })()}
+              </div>
+              <div>
+                <div className="text-xs text-gray-300">Depth</div>
+                <div className={`text-sm font-semibold ${
+                  feedbackStates.depth.status === 'correct' ? 'text-[#D8F878]' : 
+                  feedbackStates.depth.status === 'incorrect' ? 'text-[#E47CB8]' : 'text-gray-400'
+                }`}>
+                  {feedbackStates.depth.value}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Plunger State Indicator */}
+          <div className="bg-white/10 backdrop-blur-xl rounded-xl p-3 border border-white/20 shadow-lg">
+            <div className="flex items-center gap-3">
+              <div className={`w-3 h-3 rounded-full ${
+                feedbackStates.plunger.status === 'correct' ? 'bg-[#D8F878] animate-pulse' : 
+                feedbackStates.plunger.status === 'incorrect' ? 'bg-[#E47CB8]' : 'bg-gray-500'
+              }`} />
+              <div>
+                <div className="text-xs text-gray-300">Plunger</div>
+                <div className={`text-sm font-semibold ${
+                  feedbackStates.plunger.status === 'correct' ? 'text-[#D8F878]' : 
+                  feedbackStates.plunger.status === 'incorrect' ? 'text-[#E47CB8]' : 'text-gray-400'
+                }`}>
+                  {feedbackStates.plunger.value}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Confetti Effect */}
+        {showConfetti && (
+          <div className="absolute inset-0 pointer-events-none z-30">
+            {[...Array(50)].map((_, i) => (
+              <div
+                key={i}
+                className="absolute w-2 h-2 rounded-full"
+                style={{
+                  backgroundColor: ['#D8F878', '#E47CB8', '#9448B0', '#22c55e'][Math.floor(Math.random() * 4)],
+                  left: `${Math.random() * 100}%`,
+                  top: `${Math.random() * 100}%`,
+                  animation: `confetti-fall ${1 + Math.random() * 2}s ease-out forwards`,
+                  animationDelay: `${Math.random() * 0.5}s`,
+                }}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Green/Red Glow Effects */}
+        {pipetteSelectionFeedback === 'correct' && (
+          <div className="absolute inset-0 pointer-events-none z-25">
+            <div className="absolute inset-0 bg-[#D8F878]/20 animate-pulse" />
+            <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-transparent via-[#D8F878] to-transparent animate-shimmer" />
+            <div className="absolute bottom-0 left-0 right-0 h-2 bg-gradient-to-r from-transparent via-[#D8F878] to-transparent animate-shimmer" />
+            <div className="absolute left-0 top-0 bottom-0 w-2 bg-gradient-to-b from-transparent via-[#D8F878] to-transparent animate-shimmer" />
+            <div className="absolute right-0 top-0 bottom-0 w-2 bg-gradient-to-b from-transparent via-[#D8F878] to-transparent animate-shimmer" />
+          </div>
+        )}
+        {pipetteSelectionFeedback === 'wrong' && (
+          <div className="absolute inset-0 pointer-events-none z-25 animate-shake">
+            <div className="absolute inset-0 bg-[#E47CB8]/20 animate-pulse" />
+          </div>
+        )}
         {/* Pipette Action Controls */}
         <div
           id="pipetteActionControls"
@@ -1269,29 +1480,57 @@ export default function PipetteSimulator() {
               </div>
               <div className="mb-4">
                 <h3 className="text-md font-medium mb-2">Select Pipette:</h3>
-                <div id="pipette-selection" className="grid grid-cols-2 gap-2">
-                  {pipettes.map((pipette) => (
-                    <button
-                      key={pipette.id}
-                      onClick={() => selectPipette(pipette)}
-                      className={`p-2 border border-white/40 rounded-md text-sm hover:brightness-105 transition-all font-semibold ${
-                        selectedPipetteId === pipette.id ? 'ring-2 ring-[#D8F878] ring-offset-2' : ''
-                      }`}
-                      style={{
-                        backgroundColor:
-                          pipette.id === 'p2'
-                            ? '#ef4444'
-                            : pipette.id === 'p10'
-                              ? '#22c55e'
-                              : pipette.id === 'p200'
-                                ? '#eab308'
-                                : '#3b82f6',
-                        color: pipette.id === 'p200' ? '#001C3D' : '#f0f0f0',
-                      }}
-                    >
-                      {pipette.name}
-                    </button>
-                  ))}
+                <div id="pipette-selection" className="grid grid-cols-2 gap-2 relative">
+                  {pipettes.map((pipette) => {
+                    const isSelected = selectedPipetteId === pipette.id;
+                    const isCorrect = pipetteSelectionFeedback === 'correct' && isSelected;
+                    const isWrong = pipetteSelectionFeedback === 'wrong' && isSelected;
+                    
+                    return (
+                      <button
+                        key={pipette.id}
+                        onClick={() => selectPipette(pipette)}
+                        className={`relative p-3 border rounded-xl text-sm hover:brightness-105 transition-all font-semibold ${
+                          isSelected ? 'ring-2 ring-[#D8F878] ring-offset-2' : 'border-white/40'
+                        } ${isCorrect ? 'animate-pulse' : ''} ${isWrong ? 'animate-shake' : ''}`}
+                        style={{
+                          backgroundColor:
+                            pipette.id === 'p2'
+                              ? '#ef4444'
+                              : pipette.id === 'p10'
+                                ? '#22c55e'
+                                : pipette.id === 'p200'
+                                  ? '#eab308'
+                                  : '#3b82f6',
+                          color: pipette.id === 'p200' ? '#001C3D' : '#f0f0f0',
+                          boxShadow: isCorrect ? '0 0 20px rgba(216, 248, 120, 0.6)' : isWrong ? '0 0 20px rgba(228, 124, 184, 0.6)' : 'none',
+                        }}
+                      >
+                        {pipette.name}
+                        {isCorrect && (
+                          <div className="absolute -top-2 -right-2 text-2xl animate-bounce">✅</div>
+                        )}
+                        {isWrong && (
+                          <div className="absolute -top-2 -right-2 text-2xl animate-bounce">❌</div>
+                        )}
+                      </button>
+                    );
+                  })}
+                  {/* Feedback Text Overlay */}
+                  {pipetteSelectionFeedback === 'correct' && (
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+                      <div className="bg-[#D8F878]/90 text-[#001C3D] px-4 py-2 rounded-lg font-bold text-lg animate-fade-in">
+                        ✅ CORRECT
+                      </div>
+                    </div>
+                  )}
+                  {pipetteSelectionFeedback === 'wrong' && (
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+                      <div className="bg-[#E47CB8]/90 text-white px-4 py-2 rounded-lg font-bold text-lg animate-fade-in">
+                        ❌ WRONG
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
               <div className="mb-4">
@@ -1305,9 +1544,9 @@ export default function PipetteSimulator() {
               </div>
               <div id="technique-feedback" className="mt-6 space-y-2">
                 <h3 className="text-md font-medium mb-2">Real-Time Feedback:</h3>
-                <div id="feedback-angle" className="flex items-center p-2 bg-black/20 rounded-md">
+                <div id="feedback-angle" className="flex items-center p-2 bg-white/5 backdrop-blur-sm rounded-lg border border-white/10">
                   <span
-                    className="w-6 h-6 rounded-full mr-3"
+                    className="w-6 h-6 rounded-full mr-3 transition-all duration-300"
                     style={{
                       backgroundColor:
                         feedbackStates.angle.status === 'correct'
@@ -1315,15 +1554,16 @@ export default function PipetteSimulator() {
                           : feedbackStates.angle.status === 'incorrect'
                             ? '#E47CB8'
                             : '#9ca3af',
+                      boxShadow: feedbackStates.angle.status === 'correct' ? '0 0 10px rgba(216, 248, 120, 0.6)' : 'none',
                     }}
                   ></span>
-                  <span>
+                  <span className="text-sm">
                     Angle: <span className="font-semibold">{feedbackStates.angle.value}</span>
                   </span>
                 </div>
-                <div id="feedback-depth" className="flex items-center p-2 bg-black/20 rounded-md">
+                <div id="feedback-depth" className="flex items-center p-2 bg-white/5 backdrop-blur-sm rounded-lg border border-white/10">
                   <span
-                    className="w-6 h-6 rounded-full mr-3"
+                    className="w-6 h-6 rounded-full mr-3 transition-all duration-300"
                     style={{
                       backgroundColor:
                         feedbackStates.depth.status === 'correct'
@@ -1331,15 +1571,16 @@ export default function PipetteSimulator() {
                           : feedbackStates.depth.status === 'incorrect'
                             ? '#E47CB8'
                             : '#9ca3af',
+                      boxShadow: feedbackStates.depth.status === 'correct' ? '0 0 10px rgba(216, 248, 120, 0.6)' : 'none',
                     }}
                   ></span>
-                  <span>
+                  <span className="text-sm">
                     Immersion Depth: <span className="font-semibold">{feedbackStates.depth.value}</span>
                   </span>
                 </div>
-                <div id="feedback-plunger" className="flex items-center p-2 bg-black/20 rounded-md">
+                <div id="feedback-plunger" className="flex items-center p-2 bg-white/5 backdrop-blur-sm rounded-lg border border-white/10">
                   <span
-                    className="w-6 h-6 rounded-full mr-3"
+                    className="w-6 h-6 rounded-full mr-3 transition-all duration-300"
                     style={{
                       backgroundColor:
                         feedbackStates.plunger.status === 'correct'
@@ -1347,9 +1588,10 @@ export default function PipetteSimulator() {
                           : feedbackStates.plunger.status === 'incorrect'
                             ? '#E47CB8'
                             : '#9ca3af',
+                      boxShadow: feedbackStates.plunger.status === 'correct' ? '0 0 10px rgba(216, 248, 120, 0.6)' : 'none',
                     }}
                   ></span>
-                  <span>
+                  <span className="text-sm">
                     Plunger: <span className="font-semibold">{feedbackStates.plunger.value}</span>
                   </span>
                 </div>
@@ -1535,6 +1777,111 @@ export default function PipetteSimulator() {
               >
                 Close
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bottom Feedback Console */}
+      {feedbackConsole && (
+        <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 z-40 max-w-2xl w-full px-4">
+          <div className="bg-white/10 backdrop-blur-xl rounded-xl p-4 border border-white/20 shadow-2xl animate-fade-in">
+            <p className="text-white font-semibold text-center">{feedbackConsole}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Contextual Quiz Popup */}
+      {showContextualQuiz && contextualQuizQuestion && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white/95 backdrop-blur-xl rounded-2xl p-8 max-w-lg w-full shadow-2xl border border-white/20 animate-slide-in-right">
+            <h3 className="text-2xl font-bold text-[#001C3D] mb-4">Quick Question</h3>
+            <p className="text-lg text-gray-700 mb-6">{contextualQuizQuestion.question}</p>
+            <div className="space-y-3 mb-6">
+              {contextualQuizQuestion.options.map((option, idx) => {
+                const isCorrect = contextualQuizAnswer !== null && idx === contextualQuizQuestion.correct;
+                const isWrong = contextualQuizAnswer !== null && idx !== contextualQuizQuestion.correct && contextualQuizAnswer === idx;
+                
+                return (
+                  <button
+                    key={idx}
+                    onClick={() => {
+                      if (contextualQuizAnswer !== null) return;
+                      setContextualQuizAnswer(idx);
+                      const correct = idx === contextualQuizQuestion.correct;
+                      if (correct) {
+                        setShowConfetti(true);
+                        setFeedbackConsole('✅ Great Job! ' + contextualQuizQuestion.explanation);
+                        setTimeout(() => setShowConfetti(false), 2000);
+                      } else {
+                        setFeedbackConsole('❌ Not quite. Try again!');
+                      }
+                      setTimeout(() => {
+                        setShowContextualQuiz(false);
+                        setContextualQuizQuestion(null);
+                        setContextualQuizAnswer(null);
+                      }, correct ? 2000 : 1500);
+                    }}
+                    className={`w-full text-left p-4 border-2 rounded-xl transition-all ${
+                      isCorrect
+                        ? 'bg-green-100 border-green-500'
+                        : isWrong
+                          ? 'bg-red-100 border-red-500'
+                          : 'bg-white border-gray-300 hover:border-[#9448B0] hover:bg-gray-50'
+                    }`}
+                    disabled={contextualQuizAnswer !== null}
+                  >
+                    {option}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Mistake Scenario Sidebar */}
+      {showMistakeSidebar && mistakeScenario && (
+        <div className="fixed right-0 top-0 h-full w-96 bg-white/95 backdrop-blur-xl z-50 shadow-2xl border-l border-white/20 animate-slide-in-right">
+          <div className="p-6 h-full overflow-y-auto">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-2xl font-bold text-[#001C3D]">⚠️ Mistake Detected</h3>
+              <button
+                onClick={() => {
+                  setShowMistakeSidebar(false);
+                  setMistakeScenario(null);
+                }}
+                className="text-gray-500 hover:text-gray-700 text-2xl"
+              >
+                ×
+              </button>
+            </div>
+            <div className="bg-red-50 border-2 border-red-500 rounded-xl p-4 mb-6">
+              <h4 className="font-bold text-red-800 mb-2">{mistakeScenario.title}</h4>
+              <p className="text-gray-700 mb-4">{mistakeScenario.question}</p>
+              <div className="space-y-2">
+                {mistakeScenario.options.map((option, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => {
+                      if (idx === mistakeScenario.correct) {
+                        setShowConfetti(true);
+                        setTimeout(() => setShowConfetti(false), 2000);
+                      }
+                    }}
+                    className={`w-full text-left p-3 border-2 rounded-lg transition-all ${
+                      idx === mistakeScenario.correct
+                        ? 'border-green-500 bg-green-50 hover:bg-green-100'
+                        : 'border-gray-300 hover:border-gray-400'
+                    }`}
+                  >
+                    {option}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="bg-[#D8F878]/20 border-2 border-[#D8F878] rounded-xl p-4">
+              <p className="font-semibold text-[#001C3D]">💡 {mistakeScenario.tip}</p>
             </div>
           </div>
         </div>
