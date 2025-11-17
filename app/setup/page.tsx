@@ -57,11 +57,12 @@ export default function SetupPage() {
       if (canSkipKnowTools && user?.email) {
         const completed = new Set<number>();
         completed.add(2); // Mark "Know your tools" as completed
-        localStorage.setItem(`roadmap_${user.email}`, JSON.stringify(Array.from(completed)));
+        const completedArray = Array.from(completed) as number[];
+        localStorage.setItem(`roadmap_${user.email}`, JSON.stringify(completedArray));
         
         // Save to Firebase
         await updateUserProfile({
-          roadmapProgress: Array.from(completed),
+          roadmapProgress: completedArray,
         });
       }
       

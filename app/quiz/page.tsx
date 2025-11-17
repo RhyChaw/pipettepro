@@ -33,13 +33,14 @@ export default function QuizPage() {
       localStorage.setItem(`quiz_completed_${user.email}`, 'true');
       // Update roadmap completion
       const stored = localStorage.getItem(`roadmap_${user.email}`);
-      const completed = stored ? new Set(JSON.parse(stored)) : new Set<number>();
+      const completed = stored ? new Set<number>(JSON.parse(stored) as number[]) : new Set<number>();
       completed.add(4);
-      localStorage.setItem(`roadmap_${user.email}`, JSON.stringify(Array.from(completed)));
+      const completedArray = Array.from(completed) as number[];
+      localStorage.setItem(`roadmap_${user.email}`, JSON.stringify(completedArray));
       
       // Save to Firebase
       updateUserProfile({
-        roadmapProgress: Array.from(completed),
+        roadmapProgress: completedArray,
       }).catch((error) => {
         console.error('Error saving roadmap progress:', error);
       });
