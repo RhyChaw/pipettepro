@@ -1,8 +1,10 @@
 'use client';
 
 import { useEffect } from 'react';
+import Link from 'next/link';
 import PipetteSimulator from '../components/PipetteSimulator';
 import { useAuth } from '../contexts/AuthContext';
+import DashboardLayout from '../components/DashboardLayout';
 
 export default function SimulatorPage() {
   const { user, updateUserProfile } = useAuth();
@@ -27,7 +29,13 @@ export default function SimulatorPage() {
     }
   }, [user, updateUserProfile]);
 
-  return <PipetteSimulator />;
+  return (
+    <DashboardLayout>
+      <div className="h-[calc(100vh-4rem)] -m-8 relative">
+        <PipetteSimulator />
+      </div>
+    </DashboardLayout>
+  );
 }
 
 

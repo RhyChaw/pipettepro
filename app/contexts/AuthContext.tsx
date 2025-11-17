@@ -21,6 +21,7 @@ interface UserProfile {
   onboardingCompleted?: boolean;
   roadmapProgress?: number[];
   canSkipKnowTools?: boolean;
+  gotSimulationTutorial?: boolean;
 }
 
 interface AuthContextType {

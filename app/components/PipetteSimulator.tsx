@@ -1,8 +1,10 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
+import Link from 'next/link';
 import * as THREE from 'three';
 import TutorialOverlay from './TutorialOverlay';
+import { useAuth } from '../contexts/AuthContext';
 
 interface Pipette {
   id: string;
@@ -110,6 +112,7 @@ const quizQuestions = [
 ];
 
 export default function PipetteSimulator() {
+  const { userProfile, updateUserProfile } = useAuth();
   const labContainerRef = useRef<HTMLDivElement>(null);
   const [activeTab, setActiveTab] = useState<'pipetting' | 'quiz'>('pipetting');
   const [selectedPipetteId, setSelectedPipetteId] = useState<string | null>(null);
@@ -138,8 +141,32 @@ export default function PipetteSimulator() {
     depth: { value: '--', status: 'neutral' as 'correct' | 'incorrect' | 'neutral' },
     plunger: { value: 'Ready', status: 'neutral' as 'correct' | 'incorrect' | 'neutral' },
   });
-  const [showTutorial, setShowTutorial] = useState(true); // Start with tutorial shown immediately
+  // Only show tutorial if user hasn't completed it yet
+  const [showTutorial, setShowTutorial] = useState(false);
   const [feedbackConsole, setFeedbackConsole] = useState<string>('');
+
+  // Listen for tutorial button click from DashboardLayout
+  useEffect(() => {
+    const handleShowTutorial = () => {
+      setShowTutorial(true);
+    };
+    window.addEventListener('showTutorial', handleShowTutorial);
+    return () => window.removeEventListener('showTutorial', handleShowTutorial);
+  }, []);
+
+  // Sync slider with pipetteY value when scene is ready
+  useEffect(() => {
+    const syncSlider = () => {
+      if (!sceneRef.current) return;
+      const slider = document.getElementById('heightSlider') as HTMLInputElement;
+      if (slider) {
+        slider.value = sceneRef.current.gameState.pipetteY.toString();
+      }
+    };
+    // Wait a bit for scene to initialize
+    const timeout = setTimeout(syncSlider, 500);
+    return () => clearTimeout(timeout);
+  }, []);
   const [showContextualQuiz, setShowContextualQuiz] = useState(false);
   const [contextualQuizQuestion, setContextualQuizQuestion] = useState<{ question: string; options: string[]; correct: number; explanation: string } | null>(null);
   const [showMistakeSidebar, setShowMistakeSidebar] = useState(false);
@@ -147,6 +174,7 @@ export default function PipetteSimulator() {
   const [pipetteSelectionFeedback, setPipetteSelectionFeedback] = useState<'correct' | 'wrong' | null>(null);
   const [showConfetti, setShowConfetti] = useState(false);
   const [contextualQuizAnswer, setContextualQuizAnswer] = useState<number | null>(null);
+  const [currentTask, setCurrentTask] = useState<string>('Select the correct pipette for your target volume and attach a tip.');
 
   // Auto-clear feedback console after 5 seconds
   useEffect(() => {
@@ -187,7 +215,7 @@ export default function PipetteSimulator() {
 
     // Initialize Three.js scene
     const scene = new THREE.Scene();
-    scene.background = null;
+    scene.background = new THREE.Color(0xffffff); // White background
 
     const width = labContainer.clientWidth;
     const height = labContainer.clientHeight;
@@ -935,11 +963,17 @@ export default function PipetteSimulator() {
   const movePipetteVertical = (deltaY: number) => {
     if (!sceneRef.current) return;
     const { gameState, pipetteGroup } = sceneRef.current;
-    // Use smaller step size for finer control
-    const stepSize = 0.1;
+    // Increased sensitivity for faster movement
+    const stepSize = 0.3;
     gameState.pipetteY += deltaY * stepSize;
     gameState.pipetteY = Math.max(1.5, Math.min(5, gameState.pipetteY));
     pipetteGroup.position.y = gameState.pipetteY;
+    
+    // Update slider value if it exists
+    const slider = document.getElementById('heightSlider') as HTMLInputElement;
+    if (slider) {
+      slider.value = gameState.pipetteY.toString();
+    }
   };
 
   const movePipetteHorizontal = (deltaX: number, deltaZ: number) => {
@@ -952,6 +986,50 @@ export default function PipetteSimulator() {
     if (!sceneRef.current) return;
     sceneRef.current.pipetteGroup.rotation.z += angleDelta;
   };
+
+  // Keyboard controls - placed after function definitions
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Prevent default behavior for arrow keys
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+        e.preventDefault();
+      }
+
+      switch (e.key) {
+        case 'ArrowUp':
+          movePipetteHorizontal(0, -0.2);
+          break;
+        case 'ArrowDown':
+          movePipetteHorizontal(0, 0.2);
+          break;
+        case 'ArrowLeft':
+          movePipetteHorizontal(-0.2, 0);
+          break;
+        case 'ArrowRight':
+          movePipetteHorizontal(0.2, 0);
+          break;
+        case 'w':
+        case 'W':
+          movePipetteVertical(0.5); // Increased sensitivity
+          break;
+        case 's':
+        case 'S':
+          movePipetteVertical(-0.5); // Increased sensitivity
+          break;
+        case 'p':
+        case 'P':
+          handlePlunger1Click();
+          break;
+        case 'b':
+        case 'B':
+          handlePlunger2Click();
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [movePipetteHorizontal, movePipetteVertical, handlePlunger1Click, handlePlunger2Click]);
 
   // Pointer event handlers
   useEffect(() => {
@@ -1049,9 +1127,9 @@ export default function PipetteSimulator() {
     setQuizFeedback({ show: false, isCorrect: false, explanation: '' });
     setQuizData((prev) => {
       const { questions, currentQuestionIndex } = prev;
-      if (currentQuestionIndex < questions.length - 1) {
+    if (currentQuestionIndex < questions.length - 1) {
         return { ...prev, currentQuestionIndex: prev.currentQuestionIndex + 1 };
-      } else {
+    } else {
         // Quiz is complete, calculate results
         const scorePercentage = (prev.score / prev.questions.length) * 100;
         const isGoodScore = scorePercentage >= 70;
@@ -1061,9 +1139,9 @@ export default function PipetteSimulator() {
         setSelectedMeme(meme);
         
         // Close quiz modal and show results with delay to prevent glitching
-        setShowQuizModal(false);
+    setShowQuizModal(false);
         setTimeout(() => {
-          setShowQuizResults(true);
+    setShowQuizResults(true);
         }, 300);
         
         return prev; // Return unchanged state since we're done
@@ -1077,14 +1155,24 @@ export default function PipetteSimulator() {
     startQuiz(quizData.incorrectQuestions);
   };
 
-  const handleTutorialComplete = () => {
+  const handleTutorialComplete = async () => {
     setShowTutorial(false);
-    localStorage.setItem('pipettepro-tutorial-seen', 'true');
+    // Mark tutorial as completed in user profile
+    if (userProfile && !userProfile.gotSimulationTutorial) {
+      await updateUserProfile({
+        gotSimulationTutorial: true,
+      });
+    }
   };
 
-  const handleTutorialSkip = () => {
+  const handleTutorialSkip = async () => {
     setShowTutorial(false);
-    localStorage.setItem('pipettepro-tutorial-seen', 'true');
+    // Mark tutorial as completed in user profile
+    if (userProfile && !userProfile.gotSimulationTutorial) {
+      await updateUserProfile({
+        gotSimulationTutorial: true,
+      });
+    }
   };
 
 
@@ -1092,7 +1180,7 @@ export default function PipetteSimulator() {
   const currentQuestion = quizData.questions[quizData.currentQuestionIndex];
 
   return (
-    <div className="flex flex-col md:flex-row h-screen bg-slate-200 relative" style={{ fontFamily: "'Montserrat', sans-serif" }}>
+    <div className="flex flex-row h-full bg-white relative" style={{ fontFamily: "'Montserrat', sans-serif" }}>
       {/* Tutorial Overlay - Shows immediately when entering Live Lab Simulation */}
       {showTutorial && (
         <TutorialOverlay
@@ -1101,123 +1189,39 @@ export default function PipetteSimulator() {
         />
       )}
 
+      {/* Back Button - Top Left */}
+      <Link
+        href="/home"
+        className="absolute top-4 left-4 z-30 bg-white rounded-lg px-4 py-2 border-2 border-slate-300 shadow-lg hover:bg-slate-50 transition-colors flex items-center gap-2"
+      >
+        <svg className="w-5 h-5 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+        </svg>
+        <span className="text-slate-700 font-semibold">Back to Home</span>
+      </Link>
+
       {/* Main Simulation Area */}
       <div
         ref={labContainerRef}
         id="labContainer"
-        className="w-full md:w-2/3 h-1/2 md:h-full relative overflow-hidden"
+        className="flex-1 relative overflow-hidden"
         style={{
           cursor: `url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"></path><path d="M13 13l6 6"></path></svg>') 16 16, auto`,
-          backgroundImage: 'radial-gradient(circle, #332277, #001C3D)',
+          background: '#ffffff',
         }}
       >
-        {/* Floating HUD Indicators - Top Left */}
-        <div className="absolute top-4 left-4 z-20 space-y-2">
-          {/* Angle Indicator */}
-          <div className="bg-white/10 backdrop-blur-xl rounded-xl p-3 border border-white/20 shadow-lg">
-            <div className="flex items-center gap-3">
-              <div className="relative w-12 h-12">
-                {(() => {
-                  const circumference = 2 * Math.PI * 20;
-                  const angleValue = feedbackStates.angle.value === '--' ? 0 : parseFloat(feedbackStates.angle.value.replace('°', '')) || 0;
-                  const progress = angleValue / 90;
-                  const strokeDashoffset = circumference * (1 - progress);
-                  const strokeColor = feedbackStates.angle.status === 'correct' ? '#D8F878' : feedbackStates.angle.status === 'incorrect' ? '#E47CB8' : '#9ca3af';
-                  
-                  return (
-                    <svg className="transform -rotate-90 w-12 h-12">
-                      <circle
-                        cx="24"
-                        cy="24"
-                        r="20"
-                        stroke="rgba(255,255,255,0.2)"
-                        strokeWidth="4"
-                        fill="none"
-                      />
-                      <circle
-                        cx="24"
-                        cy="24"
-                        r="20"
-                        stroke={strokeColor}
-                        strokeWidth="4"
-                        fill="none"
-                        strokeDasharray={circumference}
-                        strokeDashoffset={strokeDashoffset}
-                        strokeLinecap="round"
-                        className="transition-all duration-300"
-                      />
-                    </svg>
-                  );
-                })()}
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <span className="text-xs font-bold text-white">
-                    {feedbackStates.angle.value === '--' ? '--' : feedbackStates.angle.value.replace('°', '')}
-                  </span>
-                </div>
-              </div>
-              <div>
-                <div className="text-xs text-gray-300">Angle</div>
-                <div className={`text-sm font-semibold ${
-                  feedbackStates.angle.status === 'correct' ? 'text-[#D8F878]' : 
-                  feedbackStates.angle.status === 'incorrect' ? 'text-[#E47CB8]' : 'text-gray-400'
-                }`}>
-                  {feedbackStates.angle.value}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Depth Indicator */}
-          <div className="bg-white/10 backdrop-blur-xl rounded-xl p-3 border border-white/20 shadow-lg">
-            <div className="flex items-center gap-3">
-              <div className="relative w-12 h-12 flex items-end justify-center">
-                {(() => {
-                  const depthValue = feedbackStates.depth.value === '--' ? 0 : parseFloat(feedbackStates.depth.value.replace('mm', '')) || 0;
-                  const depthPercent = Math.min(100, (depthValue / 5) * 100);
-                  const depthColor = feedbackStates.depth.status === 'correct' ? 'bg-[#D8F878]' : 
-                    feedbackStates.depth.status === 'incorrect' ? 'bg-[#E47CB8]' : 'bg-gray-500';
-                  
-                  return (
-                    <div className="w-4 h-12 bg-gray-700/50 rounded-full overflow-hidden border border-white/20">
-                      <div 
-                        className={`w-full rounded-full transition-all duration-300 ${depthColor}`}
-                        style={{ height: `${depthPercent}%` }}
-                      />
-                    </div>
-                  );
-                })()}
-              </div>
-              <div>
-                <div className="text-xs text-gray-300">Depth</div>
-                <div className={`text-sm font-semibold ${
-                  feedbackStates.depth.status === 'correct' ? 'text-[#D8F878]' : 
-                  feedbackStates.depth.status === 'incorrect' ? 'text-[#E47CB8]' : 'text-gray-400'
-                }`}>
-                  {feedbackStates.depth.value}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Plunger State Indicator */}
-          <div className="bg-white/10 backdrop-blur-xl rounded-xl p-3 border border-white/20 shadow-lg">
-            <div className="flex items-center gap-3">
-              <div className={`w-3 h-3 rounded-full ${
-                feedbackStates.plunger.status === 'correct' ? 'bg-[#D8F878] animate-pulse' : 
-                feedbackStates.plunger.status === 'incorrect' ? 'bg-[#E47CB8]' : 'bg-gray-500'
-              }`} />
-              <div>
-                <div className="text-xs text-gray-300">Plunger</div>
-                <div className={`text-sm font-semibold ${
-                  feedbackStates.plunger.status === 'correct' ? 'text-[#D8F878]' : 
-                  feedbackStates.plunger.status === 'incorrect' ? 'text-[#E47CB8]' : 'text-gray-400'
-                }`}>
-                  {feedbackStates.plunger.value}
-                </div>
-              </div>
-            </div>
+        {/* Beaker Labels */}
+        <div className="absolute bottom-32 left-1/4 z-20">
+          <div className="bg-white/95 backdrop-blur-xl rounded-lg px-4 py-2 border-2 border-blue-400 shadow-lg">
+            <p className="text-sm font-semibold text-slate-900">Source Beaker</p>
           </div>
         </div>
+        <div className="absolute bottom-32 right-1/4 z-20">
+          <div className="bg-white/95 backdrop-blur-xl rounded-lg px-4 py-2 border-2 border-blue-400 shadow-lg">
+            <p className="text-sm font-semibold text-slate-900">Destination Beaker</p>
+          </div>
+        </div>
+        {/* Confetti and effects will be here */}
 
         {/* Confetti Effect */}
         {showConfetti && (
@@ -1253,227 +1257,147 @@ export default function PipetteSimulator() {
             <div className="absolute inset-0 bg-[#E47CB8]/20 animate-pulse" />
           </div>
         )}
-        {/* Pipette Action Controls */}
-        <div
-          id="pipetteActionControls"
-          className="absolute bottom-4 left-4 flex flex-col items-center space-y-3 p-3 bg-slate-900/10 backdrop-blur-sm border border-white/20 rounded-xl shadow-lg z-10 w-40"
-        >
-          <div className="flex items-center justify-between space-x-2 w-full">
-            <button
-              id="heightDownBtn"
-              onClick={() => movePipetteVertical(-0.2)}
-              className="control-btn bg-white/30 backdrop-blur-sm text-[#001C3D] rounded-lg w-12 h-12 text-2xl font-semibold shadow-md grow"
-            >
-              -
-            </button>
-            <div className="text-center text-xs font-bold text-white uppercase tracking-wider">Height</div>
-            <button
-              id="heightUpBtn"
-              onClick={() => movePipetteVertical(0.2)}
-              className="control-btn bg-white/30 backdrop-blur-sm text-[#001C3D] rounded-lg w-12 h-12 text-2xl font-semibold shadow-md grow"
-            >
-              +
-            </button>
-          </div>
-          <button
-            id="plungerStop1Btn"
-            onClick={handlePlunger1Click}
-            className="control-btn bg-[#E47CB8] text-white rounded-lg w-full h-14 text-sm font-semibold shadow-md text-center leading-tight"
-          >
-            Plunger
-            <br />
-            <span className="text-[11px] font-normal">(Aspirate/Dispense)</span>
-          </button>
-          <button
-            id="plungerStop2Btn"
-            onClick={handlePlunger2Click}
-            className="control-btn bg-[#9448B0] text-white rounded-lg w-full h-14 text-sm font-semibold shadow-md text-center leading-tight"
-          >
-            Blow-out
-            <br />
-            <span className="text-xs font-normal">(Stop 2)</span>
-          </button>
-          <button
-            id="ejectTipBtn"
-            onClick={ejectTip}
-            className="control-btn bg-transparent text-white border-2 border-white rounded-lg w-full h-12 text-sm font-semibold shadow-md text-center leading-tight"
-          >
-            Eject Tip
-          </button>
-        </div>
-
-        {/* On-screen Controls */}
-        <div id="onScreenControls" className="absolute bottom-4 right-4 grid grid-cols-3 gap-1 w-48 text-2xl z-10">
-          <div className="flex justify-center items-center">
-            <button
-              id="tiltLeftBtn"
-              onClick={() => tiltPipette(0.1)}
-              className="d-pad-btn bg-white/40 backdrop-blur-sm text-[#001C3D] p-3 rounded-full aspect-square shadow-md"
-              title="Tilt Left"
-            >
-              &#x21B6;
-            </button>
-          </div>
-          <div className="flex justify-center items-center">
-            <button
-              id="arrowUp"
-              onClick={() => movePipetteHorizontal(0, -0.2)}
-              className="d-pad-btn bg-white/40 backdrop-blur-sm text-[#001C3D] p-3 rounded-full aspect-square shadow-md"
-              title="Move Forward"
-            >
-              &uarr;
-            </button>
-          </div>
-          <div className="flex justify-center items-center">
-            <button
-              id="tiltRightBtn"
-              onClick={() => tiltPipette(-0.1)}
-              className="d-pad-btn bg-white/40 backdrop-blur-sm text-[#001C3D] p-3 rounded-full aspect-square shadow-md"
-              title="Tilt Right"
-            >
-              &#x21B7;
-            </button>
-          </div>
-          <div className="flex justify-center items-center">
-            <button
-              id="arrowLeft"
-              onClick={() => movePipetteHorizontal(-0.2, 0)}
-              className="d-pad-btn bg-white/40 backdrop-blur-sm text-[#001C3D] p-3 rounded-full aspect-square shadow-md"
-              title="Move Left"
-            >
-              &larr;
-            </button>
-          </div>
-          <div className="flex justify-center items-center"></div>
-          <div className="flex justify-center items-center">
-            <button
-              id="arrowRight"
-              onClick={() => movePipetteHorizontal(0.2, 0)}
-              className="d-pad-btn bg-white/40 backdrop-blur-sm text-[#001C3D] p-3 rounded-full aspect-square shadow-md"
-              title="Move Right"
-            >
-              &rarr;
-            </button>
-          </div>
-          <div></div>
-          <div className="flex justify-center items-center">
-            <button
-              id="arrowDown"
-              onClick={() => movePipetteHorizontal(0, 0.2)}
-              className="d-pad-btn bg-white/40 backdrop-blur-sm text-[#001C3D] p-3 rounded-full aspect-square shadow-md"
-              title="Move Backward"
-            >
-              &darr;
-            </button>
-          </div>
-          <div></div>
-        </div>
       </div>
 
-      {/* Control Panel */}
+      {/* Control Panel - Right Side */}
       <div
-        className="w-full md:w-1/3 h-1/2 md:h-full p-4 overflow-y-auto relative flex flex-col"
+        className="w-96 h-full p-4 overflow-y-auto relative flex flex-col border-l-2 border-slate-300 bg-gradient-to-b from-slate-50 to-slate-100"
         style={{
-          backgroundImage: 'linear-gradient(to bottom right, #9448B0, #332277, #001C3D)',
-          color: '#f0f0f0',
+          color: '#1e293b',
         }}
       >
-        {/* Bacteria Animation Container */}
-        <div
-          id="panel-bacteria-animation-container"
-          className="absolute top-0 left-0 w-full h-full pointer-events-none overflow-hidden z-0"
-        >
-          <div
-            className="absolute bottom-[-20px] left-[15%] opacity-0"
-            style={{
-              width: '25px',
-              height: '10px',
-              animation: 'floatPanel 25s infinite linear 0s',
-            }}
-          >
-            <svg viewBox="0 0 25 10" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <rect width="25" height="10" rx="5" fill="#D8F878" />
-            </svg>
+        <div className="relative z-10 flex flex-col h-full">
+          {/* Current Task - Top */}
+          <div className="shrink-0 mb-4">
+            <div className="bg-white rounded-xl p-4 border-2 border-slate-300 shadow-lg">
+              <h3 className="text-sm font-semibold text-slate-700 mb-2">Current Task:</h3>
+              <p className="text-base text-slate-900 font-medium">{currentTask}</p>
+            </div>
           </div>
-          <div
-            className="absolute bottom-[-20px] left-[45%] opacity-0"
-            style={{
-              width: '15px',
-              height: '15px',
-              animation: 'floatPanel 22s infinite linear 3s',
-            }}
-          >
-            <svg viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <circle cx="7.5" cy="7.5" r="7.5" fill="#E47CB8" />
-            </svg>
-          </div>
-          <div
-            className="absolute bottom-[-20px] left-[75%] opacity-0"
-            style={{
-              width: '30px',
-              height: '12px',
-              animation: 'floatPanel 28s infinite linear 1s',
-            }}
-          >
-            <svg viewBox="0 0 30 12" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <rect width="30" height="12" rx="6" fill="#D8F878" />
-            </svg>
-          </div>
-        </div>
 
-        <div className="relative z-10 shrink-0">
-          <h1 className="text-3xl font-bold mb-6 border-b border-white/20 pb-4 flex items-center justify-center">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="28"
-              height="28"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="mr-2 text-[#D8F878]"
-            >
-              <path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5S5 13 5 15a7 7 0 0 0 7 7z"></path>
-            </svg>
-            <span>
-              Pipette<span style={{ color: '#D8F878' }}>Pro</span>
-            </span>
-          </h1>
-          <div className="grid grid-cols-2 gap-2 mb-6">
-            <button
-              id="pipetting-tab-btn"
-              onClick={() => setActiveTab('pipetting')}
-              className={`tab-button font-semibold py-2 px-1 rounded-md text-sm transition-all ${
-                activeTab === 'pipetting'
-                  ? 'bg-[#D8F878] text-[#001C3D] font-bold border-[#D8F878]'
-                  : 'bg-white/10 border border-white/20'
-              }`}
-            >
-              Practice
-            </button>
-            <button
-              id="quiz-tab-btn"
-              onClick={() => setActiveTab('quiz')}
-              className={`tab-button font-semibold py-2 px-1 rounded-md text-sm transition-all ${
-                activeTab === 'quiz'
-                  ? 'bg-[#D8F878] text-[#001C3D] font-bold border-[#D8F878]'
-                  : 'bg-white/10 border border-white/20'
-              }`}
-            >
-              Quiz
-            </button>
+          {/* Practice/Quiz Tabs */}
+          <div className="shrink-0 mb-4">
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                id="pipetting-tab-btn"
+                onClick={() => setActiveTab('pipetting')}
+                className={`tab-button font-semibold py-2 px-1 rounded-md text-sm transition-all ${
+                  activeTab === 'pipetting'
+                    ? 'bg-blue-600 text-white font-bold border-blue-600'
+                    : 'bg-white border border-slate-300 text-slate-700'
+                }`}
+              >
+                Practice
+              </button>
+              <button
+                id="quiz-tab-btn"
+                onClick={() => setActiveTab('quiz')}
+                className={`tab-button font-semibold py-2 px-1 rounded-md text-sm transition-all ${
+                  activeTab === 'quiz'
+                    ? 'bg-blue-600 text-white font-bold border-blue-600'
+                    : 'bg-white border border-slate-300 text-slate-700'
+                }`}
+              >
+                Quiz
+              </button>
+            </div>
           </div>
-        </div>
 
-        <div className="relative z-10 grow overflow-y-auto">
+          {/* Live Feedback - 3 boxes in a row */}
+          <div className="shrink-0 mb-4">
+            <h3 className="text-sm font-semibold mb-2 text-slate-700">Live Feedback:</h3>
+            <div className="grid grid-cols-3 gap-2">
+              {/* Angle Indicator */}
+              <div className="bg-white rounded-lg p-2 border border-slate-300 shadow-sm">
+                <div className="flex flex-col items-center">
+                  <div className="relative w-10 h-10 mb-1">
+                    {(() => {
+                      const circumference = 2 * Math.PI * 15;
+                      const angleValue = feedbackStates.angle.value === '--' ? 0 : parseFloat(feedbackStates.angle.value.replace('°', '')) || 0;
+                      const progress = angleValue / 90;
+                      const strokeDashoffset = circumference * (1 - progress);
+                      const strokeColor = feedbackStates.angle.status === 'correct' ? '#22c55e' : feedbackStates.angle.status === 'incorrect' ? '#ef4444' : '#9ca3af';
+                      
+                      return (
+                        <svg className="transform -rotate-90 w-10 h-10">
+                          <circle
+                            cx="20"
+                            cy="20"
+                            r="15"
+                            stroke="rgba(0,0,0,0.1)"
+                            strokeWidth="3"
+                            fill="none"
+                          />
+                          <circle
+                            cx="20"
+                            cy="20"
+                            r="15"
+                            stroke={strokeColor}
+                            strokeWidth="3"
+                            fill="none"
+                            strokeDasharray={circumference}
+                            strokeDashoffset={strokeDashoffset}
+                            strokeLinecap="round"
+                            className="transition-all duration-300"
+                          />
+                        </svg>
+                      );
+                    })()}
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <span className="text-xs font-bold text-slate-900">
+                        {feedbackStates.angle.value === '--' ? '--' : feedbackStates.angle.value.replace('°', '')}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="text-xs text-slate-600 text-center">Angle</div>
+                </div>
+              </div>
+
+              {/* Depth Indicator */}
+              <div className="bg-white rounded-lg p-2 border border-slate-300 shadow-sm">
+                <div className="flex flex-col items-center">
+                  <div className="relative w-10 h-10 mb-1 flex items-end justify-center">
+                    {(() => {
+                      const depthValue = feedbackStates.depth.value === '--' ? 0 : parseFloat(feedbackStates.depth.value.replace('mm', '')) || 0;
+                      const depthPercent = Math.min(100, (depthValue / 5) * 100);
+                      const depthColor = feedbackStates.depth.status === 'correct' ? 'bg-green-500' : 
+                        feedbackStates.depth.status === 'incorrect' ? 'bg-red-500' : 'bg-slate-400';
+                      
+                      return (
+                        <div className="w-3 h-10 bg-slate-200 rounded-full overflow-hidden border border-slate-300">
+                          <div 
+                            className={`w-full rounded-full transition-all duration-300 ${depthColor}`}
+                            style={{ height: `${depthPercent}%` }}
+                          />
+                        </div>
+                      );
+                    })()}
+                  </div>
+                  <div className="text-xs text-slate-600 text-center">Depth</div>
+                </div>
+              </div>
+
+              {/* Plunger State Indicator */}
+              <div className="bg-white rounded-lg p-2 border border-slate-300 shadow-sm">
+                <div className="flex flex-col items-center">
+                  <div className={`w-3 h-3 rounded-full mb-1 ${
+                    feedbackStates.plunger.status === 'correct' ? 'bg-green-500 animate-pulse' : 
+                    feedbackStates.plunger.status === 'incorrect' ? 'bg-red-500' : 'bg-slate-400'
+                  }`} />
+                  <div className="text-xs text-slate-600 text-center">Plunger</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Scrollable Content Area */}
+          <div className="relative z-10 flex-1 overflow-y-auto mb-4">
           {/* Pipetting Module */}
           {activeTab === 'pipetting' && (
-            <div className="bg-white/10 backdrop-blur-sm p-4 rounded-lg shadow-lg border border-white/20">
-              <h2 className="text-xl font-semibold mb-4">Pipetting Practice</h2>
+            <div className="bg-white p-4 rounded-lg shadow-lg border border-slate-300 mb-4">
+              <h2 className="text-xl font-semibold mb-4 text-slate-900">Pipetting Practice</h2>
               <div className="mb-4">
-                <label htmlFor="volume-select" className="block text-sm font-medium mb-2">
+                <label htmlFor="volume-select" className="block text-sm font-medium mb-2 text-slate-700">
                   Target Volume (μL)
                 </label>
                 <div className="flex items-center space-x-2">
@@ -1496,7 +1420,7 @@ export default function PipetteSimulator() {
                 </div>
               </div>
               <div className="mb-4">
-                <h3 className="text-md font-medium mb-2">Select Pipette:</h3>
+                <h3 className="text-md font-medium mb-2 text-slate-700">Select Pipette:</h3>
                 <div id="pipette-selection" className="grid grid-cols-2 gap-2 relative">
                   {pipettes.map((pipette) => {
                     const isSelected = selectedPipetteId === pipette.id;
@@ -1504,33 +1428,33 @@ export default function PipetteSimulator() {
                     const isWrong = pipetteSelectionFeedback === 'wrong' && isSelected;
                     
                     return (
-                      <button
-                        key={pipette.id}
-                        onClick={() => selectPipette(pipette)}
+                    <button
+                      key={pipette.id}
+                      onClick={() => selectPipette(pipette)}
                         className={`relative p-3 border rounded-xl text-sm hover:brightness-105 transition-all font-semibold ${
                           isSelected ? 'ring-2 ring-[#D8F878] ring-offset-2' : 'border-white/40'
                         } ${isCorrect ? 'animate-pulse' : ''} ${isWrong ? 'animate-shake' : ''}`}
-                        style={{
-                          backgroundColor:
-                            pipette.id === 'p2'
-                              ? '#ef4444'
-                              : pipette.id === 'p10'
-                                ? '#22c55e'
-                                : pipette.id === 'p200'
-                                  ? '#eab308'
-                                  : '#3b82f6',
-                          color: pipette.id === 'p200' ? '#001C3D' : '#f0f0f0',
+                      style={{
+                        backgroundColor:
+                          pipette.id === 'p2'
+                            ? '#ef4444'
+                            : pipette.id === 'p10'
+                              ? '#22c55e'
+                              : pipette.id === 'p200'
+                                ? '#eab308'
+                                : '#3b82f6',
+                        color: pipette.id === 'p200' ? '#001C3D' : '#f0f0f0',
                           boxShadow: isCorrect ? '0 0 20px rgba(216, 248, 120, 0.6)' : isWrong ? '0 0 20px rgba(228, 124, 184, 0.6)' : 'none',
-                        }}
-                      >
-                        {pipette.name}
+                      }}
+                    >
+                      {pipette.name}
                         {isCorrect && (
                           <div className="absolute -top-2 -right-2 text-2xl animate-bounce">✅</div>
                         )}
                         {isWrong && (
                           <div className="absolute -top-2 -right-2 text-2xl animate-bounce">❌</div>
                         )}
-                      </button>
+                    </button>
                     );
                   })}
                   {/* Feedback Text Overlay */}
@@ -1559,88 +1483,154 @@ export default function PipetteSimulator() {
                   Attach Tip
                 </button>
               </div>
-              <div id="technique-feedback" className="mt-6 space-y-2">
-                <h3 className="text-md font-medium mb-2">Real-Time Feedback:</h3>
-                <div id="feedback-angle" className="flex items-center p-2 bg-white/5 backdrop-blur-sm rounded-lg border border-white/10">
-                  <span
-                    className="w-6 h-6 rounded-full mr-3 transition-all duration-300"
-                    style={{
-                      backgroundColor:
-                        feedbackStates.angle.status === 'correct'
-                          ? '#D8F878'
-                          : feedbackStates.angle.status === 'incorrect'
-                            ? '#E47CB8'
-                            : '#9ca3af',
-                      boxShadow: feedbackStates.angle.status === 'correct' ? '0 0 10px rgba(216, 248, 120, 0.6)' : 'none',
-                    }}
-                  ></span>
-                  <span className="text-sm">
-                    Angle: <span className="font-semibold">{feedbackStates.angle.value}</span>
-                  </span>
-                </div>
-                <div id="feedback-depth" className="flex items-center p-2 bg-white/5 backdrop-blur-sm rounded-lg border border-white/10">
-                  <span
-                    className="w-6 h-6 rounded-full mr-3 transition-all duration-300"
-                    style={{
-                      backgroundColor:
-                        feedbackStates.depth.status === 'correct'
-                          ? '#D8F878'
-                          : feedbackStates.depth.status === 'incorrect'
-                            ? '#E47CB8'
-                            : '#9ca3af',
-                      boxShadow: feedbackStates.depth.status === 'correct' ? '0 0 10px rgba(216, 248, 120, 0.6)' : 'none',
-                    }}
-                  ></span>
-                  <span className="text-sm">
-                    Immersion Depth: <span className="font-semibold">{feedbackStates.depth.value}</span>
-                  </span>
-                </div>
-                <div id="feedback-plunger" className="flex items-center p-2 bg-white/5 backdrop-blur-sm rounded-lg border border-white/10">
-                  <span
-                    className="w-6 h-6 rounded-full mr-3 transition-all duration-300"
-                    style={{
-                      backgroundColor:
-                        feedbackStates.plunger.status === 'correct'
-                          ? '#D8F878'
-                          : feedbackStates.plunger.status === 'incorrect'
-                            ? '#E47CB8'
-                            : '#9ca3af',
-                      boxShadow: feedbackStates.plunger.status === 'correct' ? '0 0 10px rgba(216, 248, 120, 0.6)' : 'none',
-                    }}
-                  ></span>
-                  <span className="text-sm">
-                    Plunger: <span className="font-semibold">{feedbackStates.plunger.value}</span>
-                  </span>
-                </div>
-              </div>
             </div>
           )}
 
           {/* Quiz Module */}
           {activeTab === 'quiz' && (
-            <div className="bg-white/10 backdrop-blur-sm p-4 rounded-lg shadow-lg border border-white/20">
-              <h2 className="text-xl font-semibold mb-4">Pipetting Quiz</h2>
-              <p className="text-sm text-gray-300 mb-4">Test your knowledge of proper pipetting techniques.</p>
-              <p className="text-sm text-center text-gray-400 italic mb-4">
+            <div className="bg-white p-4 rounded-lg shadow-lg border border-slate-300 mb-4">
+              <h2 className="text-xl font-semibold mb-4 text-slate-900">Pipetting Quiz</h2>
+              <p className="text-sm text-slate-600 mb-4">Test your knowledge of proper pipetting techniques.</p>
+              <p className="text-sm text-center text-slate-500 italic mb-4">
                 You got this! Every question is a chance to learn.
               </p>
               <div className="space-y-3">
                 <a
                   href="/quiz"
-                  className="block w-full bg-[#9448B0] text-white px-4 py-2 rounded-md shadow-md hover:bg-[#A058C0] text-center font-semibold transition-all"
+                  className="block w-full bg-blue-600 text-white px-4 py-2 rounded-md shadow-md hover:bg-blue-700 text-center font-semibold transition-all"
                 >
                   Advanced Quiz System
                 </a>
                 <button
                   id="start-quiz-btn"
                   onClick={() => startQuiz()}
-                  className="w-full bg-[#D8F878] text-[#001C3D] px-4 py-2 rounded-md shadow-md hover:bg-[#C8E868] font-semibold transition-all"
+                  className="w-full bg-green-500 text-white px-4 py-2 rounded-md shadow-md hover:bg-green-600 font-semibold transition-all"
                 >
                   Quick Practice Quiz
                 </button>
               </div>
             </div>
           )}
+          </div>
+
+          {/* Control Toolkit - Bottom Right Section */}
+          <div className="shrink-0 pt-4 border-t border-slate-300">
+            <h3 className="text-lg font-semibold mb-3 text-slate-900">Controls</h3>
+            
+            {/* Actions - Above Controls */}
+            <div className="mb-4">
+              <h4 className="text-sm font-semibold mb-2 text-slate-700">Actions</h4>
+              <div className="space-y-2">
+                <button
+                  id="plungerStop1Btn"
+                  onClick={handlePlunger1Click}
+                  className="control-btn bg-pink-500 hover:bg-pink-600 text-white rounded-lg w-full h-12 text-sm font-semibold shadow-md text-center"
+                  title="Plunger (P)"
+                >
+                  Plunger (P)
+                  <div className="text-xs font-normal">Aspirate/Dispense</div>
+                </button>
+                <button
+                  id="plungerStop2Btn"
+                  onClick={handlePlunger2Click}
+                  className="control-btn bg-purple-600 hover:bg-purple-700 text-white rounded-lg w-full h-12 text-sm font-semibold shadow-md text-center"
+                  title="Blow-out (B)"
+                >
+                  Blow-out (B)
+                  <div className="text-xs font-normal">Stop 2</div>
+                </button>
+                <button
+                  id="ejectTipBtn"
+                  onClick={ejectTip}
+                  className="control-btn bg-white border-2 border-slate-400 hover:border-slate-600 text-slate-900 rounded-lg w-full h-10 text-sm font-semibold shadow-md text-center"
+                >
+                  Eject Tip
+                </button>
+              </div>
+            </div>
+
+            {/* Movement Controls */}
+            <div className="bg-white p-4 rounded-lg border border-slate-300">
+              <h4 className="text-sm font-semibold mb-3 text-slate-700">Movement</h4>
+              <div className="space-y-3">
+                {/* Arrow Keys */}
+                <div className="grid grid-cols-3 gap-2 w-32 mx-auto">
+                  <div></div>
+                  <button
+                    id="arrowUp"
+                    onClick={() => movePipetteHorizontal(0, -0.2)}
+                    className="d-pad-btn bg-slate-200 hover:bg-slate-300 text-slate-900 p-2 rounded-lg shadow-md text-lg font-semibold"
+                    title="Move Forward (↑)"
+                  >
+                    ↑
+                  </button>
+                  <div></div>
+                  <button
+                    id="arrowLeft"
+                    onClick={() => movePipetteHorizontal(-0.2, 0)}
+                    className="d-pad-btn bg-slate-200 hover:bg-slate-300 text-slate-900 p-2 rounded-lg shadow-md text-lg font-semibold"
+                    title="Move Left (←)"
+                  >
+                    ←
+                  </button>
+                  <div className="text-xs text-slate-500 text-center flex items-center justify-center">Arrow Keys</div>
+                  <button
+                    id="arrowRight"
+                    onClick={() => movePipetteHorizontal(0.2, 0)}
+                    className="d-pad-btn bg-slate-200 hover:bg-slate-300 text-slate-900 p-2 rounded-lg shadow-md text-lg font-semibold"
+                    title="Move Right (→)"
+                  >
+                    →
+                  </button>
+                  <div></div>
+                  <button
+                    id="arrowDown"
+                    onClick={() => movePipetteHorizontal(0, 0.2)}
+                    className="d-pad-btn bg-slate-200 hover:bg-slate-300 text-slate-900 p-2 rounded-lg shadow-md text-lg font-semibold"
+                    title="Move Backward (↓)"
+                  >
+                    ↓
+                  </button>
+                  <div></div>
+                </div>
+                
+                {/* Height Controls - Vertical Scrollbar */}
+                <div className="flex flex-col items-center gap-2">
+                  <div className="text-center mb-1">
+                    <div className="text-xs font-bold text-slate-700 uppercase">Height</div>
+                    <div className="text-xs text-slate-500">W / S</div>
+                  </div>
+                  <div className="relative h-32 w-8 flex items-center justify-center">
+                    <input
+                      type="range"
+                      id="heightSlider"
+                      min="1.5"
+                      max="5"
+                      step="0.05"
+                      defaultValue="3"
+                      orient="vertical"
+                      className="h-32 w-8"
+                      style={{
+                        writingMode: 'bt-lr',
+                        WebkitAppearance: 'slider-vertical',
+                      }}
+                      onChange={(e) => {
+                        if (!sceneRef.current) return;
+                        const value = parseFloat(e.target.value);
+                        sceneRef.current.gameState.pipetteY = value;
+                        sceneRef.current.pipetteGroup.position.y = value;
+                      }}
+                      onWheel={(e) => {
+                        e.preventDefault();
+                        const delta = e.deltaY > 0 ? -0.5 : 0.5; // Increased sensitivity
+                        movePipetteVertical(delta);
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1773,7 +1763,7 @@ export default function PipetteSimulator() {
               <>
                 <div className="relative w-full max-w-xs mx-auto mb-4 rounded-md overflow-hidden shadow-lg bg-gray-100 min-h-[240px] flex items-center justify-center">
                   <img
-                    id="quiz-meme"
+              id="quiz-meme"
                     src={selectedMeme.url}
                     alt={quizData.score / quizData.questions.length >= 0.7 ? "Success meme" : "Failure meme"}
                     className="max-w-xs mx-auto rounded-md object-contain"
@@ -1833,7 +1823,7 @@ export default function PipetteSimulator() {
         <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 z-40 max-w-2xl w-full px-4">
           <div className="bg-white/10 backdrop-blur-xl rounded-xl p-4 border border-white/20 shadow-2xl animate-fade-in">
             <p className="text-white font-semibold text-center">{feedbackConsole}</p>
-          </div>
+    </div>
         </div>
       )}
 

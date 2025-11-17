@@ -16,9 +16,18 @@ export default function HomePage() {
     if (!loading) {
       if (!user) {
         router.push('/signup');
-      } else if (user && (!userProfile || !userProfile.name)) {
-        router.push('/setup');
+        return;
       }
+      // Only redirect to setup if:
+      // 1. User exists
+      // 2. UserProfile has been loaded (not null)
+      // 3. Profile is incomplete (no name and not marked as complete)
+      // This prevents redirect loops when userProfile is still loading
+      if (user && userProfile !== null && !userProfile.name && !userProfile.profileComplete) {
+        router.push('/setup');
+        return;
+      }
+      // If userProfile is null but user exists, it's still loading - don't redirect yet
     }
   }, [user, userProfile, loading, router]);
 

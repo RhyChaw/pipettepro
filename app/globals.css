@@ -200,6 +200,51 @@ body {
   animation: shake 0.5s ease-in-out;
 }
 
+/* Vertical Slider Styles */
+input[type="range"][orient="vertical"] {
+  writing-mode: bt-lr; /* IE */
+  -webkit-appearance: slider-vertical; /* WebKit */
+  width: 8px;
+  height: 128px;
+  padding: 0 5px;
+}
+
+input[type="range"][orient="vertical"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #3b82f6;
+  cursor: pointer;
+  border: 2px solid white;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+input[type="range"][orient="vertical"]::-webkit-slider-runnable-track {
+  width: 8px;
+  height: 100%;
+  background: #e2e8f0;
+  border-radius: 4px;
+}
+
+input[type="range"][orient="vertical"]::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #3b82f6;
+  cursor: pointer;
+  border: 2px solid white;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+input[type="range"][orient="vertical"]::-moz-range-track {
+  width: 8px;
+  height: 100%;
+  background: #e2e8f0;
+  border-radius: 4px;
+}
+
 .animate-slide-in-right {
   animation: slide-in-right 0.3s ease-out;
 }
