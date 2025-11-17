@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '../contexts/AuthContext';
@@ -13,6 +13,38 @@ export default function SignUpPage() {
   const [loading, setLoading] = useState(false);
   const { signUp } = useAuth();
   const router = useRouter();
+  const [particlePositions, setParticlePositions] = useState<Array<{
+    left: number;
+    top: number;
+    delay: number;
+    duration: number;
+  }>>([]);
+  const [smallParticlePositions, setSmallParticlePositions] = useState<Array<{
+    left: number;
+    top: number;
+    delay: number;
+    duration: number;
+  }>>([]);
+
+  useEffect(() => {
+    // Generate random particle positions only on client side
+    setParticlePositions(
+      Array.from({ length: 20 }, () => ({
+        left: Math.random() * 100,
+        top: Math.random() * 100,
+        delay: Math.random() * 5,
+        duration: 3 + Math.random() * 4,
+      }))
+    );
+    setSmallParticlePositions(
+      Array.from({ length: 15 }, () => ({
+        left: Math.random() * 100,
+        top: Math.random() * 100,
+        delay: Math.random() * 5,
+        duration: 4 + Math.random() * 3,
+      }))
+    );
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -40,13 +72,40 @@ export default function SignUpPage() {
   };
 
   return (
-    <div
-      className="min-h-screen flex items-center justify-center p-4"
-      style={{
-        backgroundImage: 'linear-gradient(to bottom right, #9448B0, #332277, #001C3D)',
-      }}
-    >
-      <div className="w-full max-w-md">
+    <div className="min-h-screen bg-gradient-to-b from-[#001C3D] via-[#332277] to-[#001C3D] flex items-center justify-center p-4">
+      {/* Animated Background Particles */}
+      <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
+        <div className="absolute inset-0 opacity-30">
+          {particlePositions.length > 0 && particlePositions.map((particle, i) => (
+            <div
+              key={i}
+              className="absolute w-2 h-2 bg-[#D8F878] rounded-full animate-float"
+              style={{
+                left: `${particle.left}%`,
+                top: `${particle.top}%`,
+                animationDelay: `${particle.delay}s`,
+                animationDuration: `${particle.duration}s`,
+              }}
+            />
+          ))}
+        </div>
+        <div className="absolute inset-0 opacity-20">
+          {smallParticlePositions.length > 0 && smallParticlePositions.map((particle, i) => (
+            <div
+              key={i}
+              className="absolute w-1 h-1 bg-[#E47CB8] rounded-full animate-float"
+              style={{
+                left: `${particle.left}%`,
+                top: `${particle.top}%`,
+                animationDelay: `${particle.delay}s`,
+                animationDuration: `${particle.duration}s`,
+              }}
+            />
+          ))}
+        </div>
+      </div>
+
+      <div className="w-full max-w-md relative z-10">
         <div className="bg-white/10 backdrop-blur-xl rounded-2xl p-8 border border-white/20 shadow-2xl">
           <div className="text-center mb-8">
             <h1 className="text-4xl font-bold text-white mb-2">

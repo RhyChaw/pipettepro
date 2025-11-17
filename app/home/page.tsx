@@ -27,7 +27,7 @@ export default function HomePage() {
     if (user?.email) {
       // First check Firebase for saved progress
       if (userProfile?.roadmapProgress) {
-        setCompletedSteps(new Set(userProfile.roadmapProgress));
+        setCompletedSteps(new Set<number>(userProfile.roadmapProgress));
         // Sync to localStorage
         localStorage.setItem(`roadmap_${user.email}`, JSON.stringify(userProfile.roadmapProgress));
       } else {
@@ -35,8 +35,8 @@ export default function HomePage() {
         const stored = localStorage.getItem(`roadmap_${user.email}`);
         if (stored) {
           try {
-            const completed = JSON.parse(stored);
-            setCompletedSteps(new Set(completed));
+            const completed = JSON.parse(stored) as number[];
+            setCompletedSteps(new Set<number>(completed));
           } catch (e) {
             console.error('Error parsing completed steps:', e);
           }
@@ -52,8 +52,10 @@ export default function HomePage() {
     const checkCompletion = () => {
       const completed = new Set<number>();
       
-      // Step 2: Know your tools - check if visited
-      if (localStorage.getItem(`visited_know-your-pipette_${user.email}`)) {
+      // Step 2: Know your tools - check if user can skip (has experience) or visited
+      if (userProfile?.canSkipKnowTools) {
+        completed.add(2);
+      } else if (localStorage.getItem(`visited_know-your-pipette_${user.email}`)) {
         completed.add(2);
       }
       
@@ -67,8 +69,9 @@ export default function HomePage() {
         completed.add(4);
       }
       
+      const completedArray = Array.from(completed) as number[];
       setCompletedSteps(completed);
-      localStorage.setItem(`roadmap_${user.email}`, JSON.stringify(Array.from(completed)));
+      localStorage.setItem(`roadmap_${user.email}`, JSON.stringify(completedArray));
     };
 
     checkCompletion();
@@ -82,7 +85,7 @@ export default function HomePage() {
     
     window.addEventListener('storage', handleStorageChange);
     return () => window.removeEventListener('storage', handleStorageChange);
-  }, [user]);
+  }, [user, userProfile]);
 
   if (loading) {
     return (
@@ -191,7 +194,7 @@ export default function HomePage() {
             <div className="lg:col-span-2 relative">
             {[
               { id: 1, title: 'Onboarding', route: null },
-              { id: 2, title: 'Know your tools', route: '/know-your-pipette' },
+              { id: 2, title: 'Know your tools', route: '/know-your-pipette', canSkip: userProfile?.canSkipKnowTools },
               { id: 3, title: 'Understanding the simulation', route: '/simulator' },
               { id: 4, title: 'A basic quiz', route: '/quiz' },
               { id: 5, title: 'Explore the app', route: null },
@@ -225,18 +228,48 @@ export default function HomePage() {
                     {/* Content */}
                     <div className="flex-1">
                       {step.route ? (
-                        <Link
-                          href={step.route}
-                          className={`block p-4 rounded-lg border-2 transition-all duration-200 ${
-                            stepCompleted
-                              ? 'bg-slate-50 border-slate-200 text-slate-500 cursor-default'
-                              : 'bg-white border-slate-300 text-slate-900 hover:border-blue-500 hover:shadow-md cursor-pointer'
-                          }`}
-                        >
-                          <h3 className={`font-semibold text-lg ${stepCompleted ? 'text-slate-500' : 'text-slate-900'}`}>
-                            {step.title}
-                          </h3>
-                        </Link>
+                        step.id === 2 && step.canSkip && !stepCompleted ? (
+                          <button
+                            onClick={async () => {
+                              if (!user?.email) return;
+                              
+                              // Mark step 2 as completed (skip)
+                              const stored = localStorage.getItem(`roadmap_${user.email}`);
+                              const completed = stored ? new Set<number>(JSON.parse(stored) as number[]) : new Set<number>();
+                              completed.add(2);
+                              const completedArray = Array.from(completed) as number[];
+                              localStorage.setItem(`roadmap_${user.email}`, JSON.stringify(completedArray));
+                              
+                              // Save to Firebase
+                              try {
+                                await updateUserProfile({
+                                  roadmapProgress: completedArray,
+                                });
+                                setCompletedSteps(completed);
+                              } catch (error) {
+                                console.error('Error saving roadmap progress:', error);
+                              }
+                            }}
+                            className="block w-full text-left p-4 rounded-lg border-2 transition-all duration-200 bg-white border-slate-300 text-slate-900 hover:border-green-500 hover:shadow-md cursor-pointer"
+                          >
+                            <h3 className="font-semibold text-lg text-slate-900">
+                              {step.title} <span className="text-sm font-normal text-green-600">(Skip)</span>
+                            </h3>
+                          </button>
+                        ) : (
+                          <Link
+                            href={step.route}
+                            className={`block p-4 rounded-lg border-2 transition-all duration-200 ${
+                              stepCompleted
+                                ? 'bg-slate-50 border-slate-200 text-slate-500 cursor-default'
+                                : 'bg-white border-slate-300 text-slate-900 hover:border-blue-500 hover:shadow-md cursor-pointer'
+                            }`}
+                          >
+                            <h3 className={`font-semibold text-lg ${stepCompleted ? 'text-slate-500' : 'text-slate-900'}`}>
+                              {step.title}
+                            </h3>
+                          </Link>
+                        )
                       ) : step.id === 1 ? (
                         <button
                           onClick={() => {
@@ -387,18 +420,19 @@ export default function HomePage() {
                 onClick={async () => {
                   if (!user?.email) return;
                   
-                  // Mark onboarding as completed
-                  const stored = localStorage.getItem(`roadmap_${user.email}`);
-                  const completed = stored ? new Set(JSON.parse(stored)) : new Set<number>();
-                  completed.add(1);
-                  localStorage.setItem(`roadmap_${user.email}`, JSON.stringify(Array.from(completed)));
-                  
-                  // Save to Firebase
-                  try {
-                    await updateUserProfile({
-                      onboardingCompleted: true,
-                      roadmapProgress: Array.from(completed),
-                    });
+                            // Mark onboarding as completed
+                            const stored = localStorage.getItem(`roadmap_${user.email}`);
+                            const completed = stored ? new Set<number>(JSON.parse(stored) as number[]) : new Set<number>();
+                            completed.add(1);
+                            const completedArray = Array.from(completed) as number[];
+                            localStorage.setItem(`roadmap_${user.email}`, JSON.stringify(completedArray));
+                            
+                            // Save to Firebase
+                            try {
+                              await updateUserProfile({
+                                onboardingCompleted: true,
+                                roadmapProgress: completedArray,
+                              });
                     setCompletedSteps(completed);
                     setShowOnboardingModal(false);
                   } catch (error) {

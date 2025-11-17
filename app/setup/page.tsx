@@ -42,12 +42,29 @@ export default function SetupPage() {
 
     try {
       setSubmitting(true);
+      // If user has experience (not "Never done before"), they can skip "Know the tools"
+      const canSkipKnowTools = formData.pipetteExperience !== 'Never done before';
+      
       await updateUserProfile({
         name: formData.name,
         email: user?.email || '',
         'pipette experience': formData.pipetteExperience,
         profileComplete: true,
+        canSkipKnowTools: canSkipKnowTools,
       });
+      
+      // If they can skip, automatically mark step 2 as completed
+      if (canSkipKnowTools && user?.email) {
+        const completed = new Set<number>();
+        completed.add(2); // Mark "Know your tools" as completed
+        localStorage.setItem(`roadmap_${user.email}`, JSON.stringify(Array.from(completed)));
+        
+        // Save to Firebase
+        await updateUserProfile({
+          roadmapProgress: Array.from(completed),
+        });
+      }
+      
       router.push('/home');
     } catch (err: any) {
       setError(err.message || 'Failed to save profile');
@@ -58,12 +75,7 @@ export default function SetupPage() {
 
   if (authLoading) {
     return (
-      <div
-        className="min-h-screen flex items-center justify-center"
-        style={{
-          backgroundImage: 'linear-gradient(to bottom right, #9448B0, #332277, #001C3D)',
-        }}
-      >
+      <div className="min-h-screen bg-gradient-to-b from-[#001C3D] via-[#332277] to-[#001C3D] flex items-center justify-center">
         <div className="text-white text-xl">Loading...</div>
       </div>
     );
@@ -77,12 +89,7 @@ export default function SetupPage() {
   ];
 
   return (
-    <div
-      className="min-h-screen flex items-center justify-center p-4"
-      style={{
-        backgroundImage: 'linear-gradient(to bottom right, #9448B0, #332277, #001C3D)',
-      }}
-    >
+    <div className="min-h-screen bg-gradient-to-b from-[#001C3D] via-[#332277] to-[#001C3D] flex items-center justify-center p-4">
       <div className="w-full max-w-2xl">
         <div className="bg-white/10 backdrop-blur-xl rounded-2xl p-8 border border-white/20 shadow-2xl">
           <div className="text-center mb-8">

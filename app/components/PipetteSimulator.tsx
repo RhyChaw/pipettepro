@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import * as THREE from 'three';
-import Image from 'next/image';
 import TutorialOverlay from './TutorialOverlay';
 
 interface Pipette {
@@ -60,22 +59,16 @@ const proTips = [
   "Regularly decontaminate, inspect, and lubricate your micropipette to ensure its longevity and performance.",
 ];
 
-// Meme images should be placed in /public/quiz-memes/
-// Expected files: meme-1.jpg, meme-2.jpg, meme-3.jpg (or .png)
-const memes = [
-  { 
-    url: '/quiz-memes/meme-1.jpg', 
-    text: "Great job! Even when experiments don't go as planned, every attempt is a step forward." 
-  },
-  { 
-    url: '/quiz-memes/meme-2.jpg', 
-    text: "You're doing amazing! Science is all about persistence." 
-  },
-  { 
-    url: '/quiz-memes/meme-3.jpg', 
-    text: "Fantastic work! Remember, every expert was once a beginner." 
-  },
-];
+// Meme images for quiz results
+const successMeme = {
+  url: '/meme_success.png',
+  text: "Excellent work! You're mastering pipetting techniques!"
+};
+
+const failureMeme = {
+  url: '/meme_failure.png',
+  text: "Keep practicing! Every attempt helps you improve."
+};
 
 const quizQuestions = [
   {
@@ -1054,23 +1047,28 @@ export default function PipetteSimulator() {
 
   const nextQuestion = () => {
     setQuizFeedback({ show: false, isCorrect: false, explanation: '' });
-    const { questions, currentQuestionIndex } = quizData;
-    if (currentQuestionIndex < questions.length - 1) {
-      setQuizData((prev) => ({ ...prev, currentQuestionIndex: prev.currentQuestionIndex + 1 }));
-    } else {
-      endQuiz();
-    }
-  };
-
-  const endQuiz = () => {
-    setShowQuizModal(false);
-    // Select a random meme once (client-side only) to avoid hydration issues
-    const randomMeme = memes[Math.floor(Math.random() * memes.length)];
-    setSelectedMeme(randomMeme);
-    // Small delay to ensure modal closes before results open
-    setTimeout(() => {
-      setShowQuizResults(true);
-    }, 300);
+    setQuizData((prev) => {
+      const { questions, currentQuestionIndex } = prev;
+      if (currentQuestionIndex < questions.length - 1) {
+        return { ...prev, currentQuestionIndex: prev.currentQuestionIndex + 1 };
+      } else {
+        // Quiz is complete, calculate results
+        const scorePercentage = (prev.score / prev.questions.length) * 100;
+        const isGoodScore = scorePercentage >= 70;
+        const meme = isGoodScore ? successMeme : failureMeme;
+        
+        // Set meme immediately to avoid state timing issues
+        setSelectedMeme(meme);
+        
+        // Close quiz modal and show results with delay to prevent glitching
+        setShowQuizModal(false);
+        setTimeout(() => {
+          setShowQuizResults(true);
+        }, 300);
+        
+        return prev; // Return unchanged state since we're done
+      }
+    });
   };
 
   const retryIncorrectQuestions = () => {
@@ -1774,21 +1772,20 @@ export default function PipetteSimulator() {
             {selectedMeme ? (
               <>
                 <div className="relative w-full max-w-xs mx-auto mb-4 rounded-md overflow-hidden shadow-lg bg-gray-100 min-h-[240px] flex items-center justify-center">
-                  <Image
+                  <img
                     id="quiz-meme"
                     src={selectedMeme.url}
-                    alt="Encouraging meme"
-                    width={320}
-                    height={240}
-                    className="max-w-xs mx-auto rounded-md"
-                    unoptimized
+                    alt={quizData.score / quizData.questions.length >= 0.7 ? "Success meme" : "Failure meme"}
+                    className="max-w-xs mx-auto rounded-md object-contain"
                     onError={(e) => {
                       // Fallback if image fails to load
                       const target = e.target as HTMLImageElement;
                       target.style.display = 'none';
                       const parent = target.parentElement;
                       if (parent) {
-                        parent.innerHTML = '<div class="text-gray-400 text-center p-8"><p class="text-lg">🎉</p><p class="text-sm mt-2">Great job!</p></div>';
+                        const emoji = quizData.score / quizData.questions.length >= 0.7 ? '🎉' : '💪';
+                        const message = quizData.score / quizData.questions.length >= 0.7 ? 'Great job!' : 'Keep practicing!';
+                        parent.innerHTML = `<div class="text-gray-400 text-center p-8"><p class="text-lg">${emoji}</p><p class="text-sm mt-2">${message}</p></div>`;
                       }
                     }}
                   />

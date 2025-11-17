@@ -20,6 +20,7 @@ interface UserProfile {
   highestLevel?: number;
   onboardingCompleted?: boolean;
   roadmapProgress?: number[];
+  canSkipKnowTools?: boolean;
 }
 
 interface AuthContextType {
