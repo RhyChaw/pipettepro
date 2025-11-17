@@ -1,10 +1,46 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useAuth } from '../contexts/AuthContext';
+import { useRouter } from 'next/navigation';
 
 export default function LandingPage() {
   const heroRef = useRef<HTMLDivElement>(null);
+  const { user, loading } = useAuth();
+  const router = useRouter();
+  const [particlePositions, setParticlePositions] = useState<Array<{
+    left: number;
+    top: number;
+    delay: number;
+    duration: number;
+  }>>([]);
+  const [smallParticlePositions, setSmallParticlePositions] = useState<Array<{
+    left: number;
+    top: number;
+    delay: number;
+    duration: number;
+  }>>([]);
+
+  useEffect(() => {
+    // Generate random particle positions only on client side
+    setParticlePositions(
+      Array.from({ length: 20 }, () => ({
+        left: Math.random() * 100,
+        top: Math.random() * 100,
+        delay: Math.random() * 5,
+        duration: 3 + Math.random() * 4,
+      }))
+    );
+    setSmallParticlePositions(
+      Array.from({ length: 15 }, () => ({
+        left: Math.random() * 100,
+        top: Math.random() * 100,
+        delay: Math.random() * 5,
+        duration: 4 + Math.random() * 3,
+      }))
+    );
+  }, []);
 
   useEffect(() => {
     // Add scroll-based animations
@@ -34,29 +70,29 @@ export default function LandingPage() {
       {/* Animated Background Particles */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
         <div className="absolute inset-0 opacity-30">
-          {[...Array(20)].map((_, i) => (
-            <div
+          {particlePositions.length > 0 && particlePositions.map((particle, i) => (
+    <div
               key={i}
               className="absolute w-2 h-2 bg-[#D8F878] rounded-full animate-float"
-              style={{
-                left: `${Math.random() * 100}%`,
-                top: `${Math.random() * 100}%`,
-                animationDelay: `${Math.random() * 5}s`,
-                animationDuration: `${3 + Math.random() * 4}s`,
+      style={{
+                left: `${particle.left}%`,
+                top: `${particle.top}%`,
+                animationDelay: `${particle.delay}s`,
+                animationDuration: `${particle.duration}s`,
               }}
             />
           ))}
         </div>
         <div className="absolute inset-0 opacity-20">
-          {[...Array(15)].map((_, i) => (
+          {smallParticlePositions.length > 0 && smallParticlePositions.map((particle, i) => (
             <div
               key={i}
               className="absolute w-1 h-1 bg-[#E47CB8] rounded-full animate-float"
-              style={{
-                left: `${Math.random() * 100}%`,
-                top: `${Math.random() * 100}%`,
-                animationDelay: `${Math.random() * 5}s`,
-                animationDuration: `${4 + Math.random() * 3}s`,
+          style={{
+                left: `${particle.left}%`,
+                top: `${particle.top}%`,
+                animationDelay: `${particle.delay}s`,
+                animationDuration: `${particle.duration}s`,
               }}
             />
           ))}
@@ -93,8 +129,8 @@ export default function LandingPage() {
               </div>
               {/* Glow Effect */}
               <div className="absolute inset-0 bg-gradient-radial from-[#D8F878]/20 via-transparent to-transparent blur-3xl animate-pulse"></div>
-            </div>
-          </div>
+        </div>
+      </div>
 
           <h1 className="text-7xl md:text-9xl font-bold text-white mb-6 animate-fade-in">
             Pipette<span className="text-[#D8F878]">Pro</span>
@@ -102,25 +138,20 @@ export default function LandingPage() {
           <p className="text-2xl md:text-3xl text-gray-300 mb-8 max-w-3xl mx-auto animate-fade-in">
             Master pipetting accuracy through immersive 3D simulation.
           </p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-6 animate-fade-in">
-            <Link
-              href="/simulator"
-              className="px-8 py-4 bg-gradient-to-r from-[#9448B0] to-[#332277] text-white font-bold text-lg rounded-xl shadow-2xl hover:shadow-[#9448B0]/50 transform hover:scale-105 transition-all duration-300 border border-white/20"
+          <div className="flex justify-center items-center mb-6 animate-fade-in">
+            <button
+              onClick={() => {
+                if (user) {
+                  router.push('/home');
+                } else {
+                  router.push('/signup');
+                }
+              }}
+              className="px-12 py-5 bg-gradient-to-r from-[#9448B0] to-[#332277] text-white font-bold text-xl rounded-xl shadow-2xl hover:shadow-[#9448B0]/50 transform hover:scale-105 transition-all duration-300 border border-white/20"
             >
-              Start Simulation
-            </Link>
-            <Link
-              href="/home"
-              className="px-8 py-4 bg-white/10 backdrop-blur-sm text-white font-bold text-lg rounded-xl shadow-xl hover:bg-white/20 transform hover:scale-105 transition-all duration-300 border border-white/20"
-            >
-              Explore App
-            </Link>
+              Get Started
+            </button>
           </div>
-          <p className="text-sm text-gray-400 animate-fade-in">
-            <Link href="/home" className="underline hover:text-[#D8F878] transition-colors">
-              Sign up to save your progress
-            </Link>
-          </p>
         </div>
 
         {/* Scroll Indicator */}
@@ -128,7 +159,7 @@ export default function LandingPage() {
           <div className="w-6 h-10 border-2 border-white/30 rounded-full flex justify-center">
             <div className="w-1 h-3 bg-white/50 rounded-full mt-2 animate-pulse"></div>
           </div>
-        </div>
+                </div>
       </section>
 
       {/* How It Works Section */}
@@ -136,7 +167,7 @@ export default function LandingPage() {
         <div className="container mx-auto max-w-6xl">
           <h2 className="text-5xl md:text-6xl font-bold text-white text-center mb-4 scroll-animate">
             How It Works
-          </h2>
+                </h2>
           <p className="text-xl text-gray-400 text-center mb-16 scroll-animate">
             Three powerful ways to master pipetting
           </p>
@@ -150,9 +181,9 @@ export default function LandingPage() {
               <h3 className="text-2xl font-bold text-white mb-4">Simulation</h3>
               <p className="text-gray-300 leading-relaxed">
                 Practice real pipetting techniques in a virtual lab environment with realistic physics and feedback.
-              </p>
-              <Link
-                href="/simulator"
+                </p>
+                <Link
+                  href="/simulator"
                 className="inline-block mt-6 text-[#D8F878] hover:text-[#D8F878]/80 font-semibold"
               >
                 Try it now →
@@ -173,7 +204,7 @@ export default function LandingPage() {
                 className="inline-block mt-6 text-[#D8F878] hover:text-[#D8F878]/80 font-semibold"
               >
                 Start quiz →
-              </Link>
+                </Link>
             </div>
 
             {/* Challenge Card */}
@@ -228,7 +259,7 @@ export default function LandingPage() {
         <div className="container mx-auto max-w-6xl">
           <h2 className="text-5xl md:text-6xl font-bold text-white text-center mb-16 scroll-animate">
             Powerful Features
-          </h2>
+                </h2>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             {/* Mistake Analyzer */}
@@ -264,7 +295,7 @@ export default function LandingPage() {
               </p>
             </div>
           </div>
-        </div>
+                </div>
       </section>
 
       {/* Testimonials Section */}
@@ -273,7 +304,7 @@ export default function LandingPage() {
           <div className="bg-white/5 backdrop-blur-md rounded-3xl p-12 border border-white/10 scroll-animate">
             <h2 className="text-4xl font-bold text-white text-center mb-4">
               Trusted by Educators and Lab Enthusiasts
-            </h2>
+                </h2>
             <p className="text-xl text-gray-400 text-center mb-12">
               Join thousands of students and professionals mastering pipetting skills
             </p>
@@ -320,7 +351,7 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Footer */}
+        {/* Footer */}
       <footer className="relative py-16 px-4 border-t border-white/10 z-10">
         <div className="container mx-auto max-w-6xl">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-8">
@@ -328,7 +359,7 @@ export default function LandingPage() {
               <h3 className="text-2xl font-bold text-white mb-4">
                 Pipette<span className="text-[#D8F878]">Pro</span>
               </h3>
-              <p className="text-gray-400 text-sm">
+          <p className="text-gray-400 text-sm">
                 Master pipetting through immersive 3D simulation.
               </p>
             </div>

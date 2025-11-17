@@ -4,6 +4,7 @@ import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState, useEffect } from 'react';
+import { useAuth } from '../contexts/AuthContext';
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
@@ -20,8 +21,10 @@ type TabType =
 
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const pathname = usePathname();
+  const { userProfile } = useAuth();
   const [hoveredTab, setHoveredTab] = useState<string | null>(null);
   const [particlePositions, setParticlePositions] = useState<Array<{ left: number; top: number }>>([]);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Generate random positions only on client side to avoid hydration mismatch
   useEffect(() => {
@@ -56,93 +59,124 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const activeTab = routeToTab[pathname] || 'dashboard';
 
   return (
-    <div
-      className="min-h-screen relative overflow-hidden flex"
-      style={{
-        backgroundImage: 'linear-gradient(to bottom right, #9448B0, #332277, #001C3D)',
-      }}
-    >
-      {/* Animated background elements */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        {particlePositions.length > 0 && [...Array(5)].map((_, i) => (
-          <div
-            key={i}
-            className="absolute rounded-full opacity-20 blur-3xl animate-pulse-slow"
-            style={{
-              width: `${100 + i * 50}px`,
-              height: `${100 + i * 50}px`,
-              left: `${particlePositions[i]?.left || 0}%`,
-              top: `${particlePositions[i]?.top || 0}%`,
-              backgroundColor: i % 2 === 0 ? '#D8F878' : '#E47CB8',
-              animationDelay: `${i * 0.5}s`,
-            }}
-          />
-        ))}
-      </div>
+    <div className="min-h-screen bg-slate-50 flex">
+      {/* Sidebar Toggle Button */}
+      <button
+        onClick={() => setSidebarOpen(!sidebarOpen)}
+        className="fixed top-4 left-4 z-50 bg-white border-2 border-slate-300 rounded-lg p-2 shadow-md hover:bg-slate-50 transition-colors"
+        aria-label="Toggle sidebar"
+      >
+        <svg
+          className="w-6 h-6 text-slate-700"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          {sidebarOpen ? (
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          ) : (
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+          )}
+        </svg>
+      </button>
 
       {/* Sidebar */}
-      <div className="relative z-10 w-64 bg-white/5 backdrop-blur-xl border-r border-white/10 flex-shrink-0 flex flex-col">
+      <div
+        className={`fixed inset-y-0 left-0 z-40 w-64 bg-white border-r border-slate-200 flex-shrink-0 flex flex-col shadow-sm transition-transform duration-300 ease-in-out ${
+          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
+      >
+        {/* Sidebar Toggle Button (inside sidebar) */}
+        <button
+          onClick={() => setSidebarOpen(false)}
+          className="absolute top-4 right-4 bg-slate-100 hover:bg-slate-200 rounded-lg p-2 transition-colors"
+          aria-label="Close sidebar"
+        >
+          <svg
+            className="w-5 h-5 text-slate-700"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
         {/* Logo Section */}
-        <div className="p-4 border-b border-white/10">
+        <div className="p-6 border-b border-slate-200">
           <Link
             href="/"
-            className="flex items-center gap-3 mb-4 group"
+            className="flex items-center gap-3 mb-6 group"
             onMouseEnter={() => setHoveredTab('logo')}
             onMouseLeave={() => setHoveredTab(null)}
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
-              width="32"
-              height="32"
+              width="28"
+              height="28"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
               strokeWidth="2"
               strokeLinecap="round"
               strokeLinejoin="round"
-              className="text-[#D8F878]"
+              className="text-slate-700"
             >
               <path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5S5 13 5 15a7 7 0 0 0 7 7z"></path>
             </svg>
-            <h1 className="text-xl font-bold text-white">
-              Pipette<span className="text-[#D8F878]">Pro</span>
+            <h1 className="text-lg font-semibold text-slate-900">
+              Pipette<span className="text-slate-600">Pro</span>
             </h1>
           </Link>
 
           {/* Profile Icon */}
           <Link
             href="/profile"
-            className="w-12 h-12 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center mx-auto hover:bg-white/20 hover:shadow-[0_0_20px_rgba(216,248,120,0.4)] transition-all duration-300 cursor-pointer border border-white/20 group"
+            className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mx-auto hover:bg-slate-200 transition-all duration-200 cursor-pointer border-2 border-slate-200 group overflow-hidden"
             onMouseEnter={() => setHoveredTab('profile')}
             onMouseLeave={() => setHoveredTab(null)}
           >
-            <span className="text-2xl group-hover:scale-110 transition-transform duration-300">👤</span>
+            {userProfile?.profilePictureUrl ? (
+              <img
+                src={userProfile.profilePictureUrl}
+                alt="Profile"
+                className="w-full h-full object-cover"
+                onError={(e) => {
+                  const target = e.target as HTMLImageElement;
+                  target.style.display = 'none';
+                  const parent = target.parentElement;
+                  if (parent) {
+                    const fallback = document.createElement('div');
+                    fallback.className = 'w-full h-full flex items-center justify-center bg-slate-200 text-slate-500 text-sm font-medium';
+                    fallback.textContent = userProfile?.name?.charAt(0).toUpperCase() || 'U';
+                    parent.appendChild(fallback);
+                  }
+                }}
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center bg-slate-200 text-slate-500 text-sm font-medium">
+                {userProfile?.name?.charAt(0).toUpperCase() || 'U'}
+              </div>
+            )}
           </Link>
         </div>
 
         {/* Sidebar Tabs */}
-        <div className="flex-1 p-2 flex flex-col">
+        <div className="flex-1 p-3 flex flex-col">
           {tabs.map((tab) => {
             const isActive = activeTab === tab.id;
             return (
               <Link
                 key={tab.id}
                 href={tab.route}
-                className={`relative flex items-center gap-3 px-3 py-3 rounded-xl mb-2 transition-all duration-300 group ${
+                className={`flex items-center gap-3 px-4 py-3 rounded-lg mb-1 transition-all duration-200 ${
                   isActive
-                    ? 'bg-white/20 text-white shadow-lg shadow-[#9448B0]/30 border border-white/20'
-                    : 'text-white/70 hover:text-white hover:bg-white/10'
+                    ? 'bg-slate-900 text-white shadow-sm'
+                    : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
                 }`}
                 onMouseEnter={() => setHoveredTab(tab.id)}
                 onMouseLeave={() => setHoveredTab(null)}
               >
-                {/* Glow effect on active */}
-                {isActive && (
-                  <div className="absolute inset-0 bg-gradient-to-r from-[#9448B0]/20 to-[#332277]/20 rounded-xl blur-sm"></div>
-                )}
-
-                {/* Label - always visible */}
-                <span className="font-semibold relative z-10">
+                <span className={`font-medium text-sm ${isActive ? 'text-white' : 'text-slate-700'}`}>
                   {tab.name}
                 </span>
               </Link>
@@ -151,9 +185,17 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         </div>
       </div>
 
+      {/* Overlay when sidebar is open */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-30"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
       {/* Main Content */}
-      <div className="flex-1 overflow-y-auto">
-        <div className="container mx-auto px-6 py-8 max-w-6xl">
+      <div className="flex-1 overflow-y-auto bg-slate-50">
+        <div className="container mx-auto px-8 py-8 max-w-7xl">
           {children}
         </div>
       </div>

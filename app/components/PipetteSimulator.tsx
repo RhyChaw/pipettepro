@@ -60,10 +60,21 @@ const proTips = [
   "Regularly decontaminate, inspect, and lubricate your micropipette to ensure its longevity and performance.",
 ];
 
+// Meme images should be placed in /public/quiz-memes/
+// Expected files: meme-1.jpg, meme-2.jpg, meme-3.jpg (or .png)
 const memes = [
-  { url: 'https://i.imgflip.com/3953od.jpg', text: "Great job! Even when experiments don't go as planned, every attempt is a step forward." },
-  { url: 'https://i.redd.it/5p9e6z7q5t951.jpg', text: "You're doing amazing! Science is all about persistence." },
-  { url: 'https://i.pinimg.com/736x/e0/75/95/e0759525413a1a64a37237855f135a58.jpg', text: "Fantastic work! Remember, every expert was once a beginner." },
+  { 
+    url: '/quiz-memes/meme-1.jpg', 
+    text: "Great job! Even when experiments don't go as planned, every attempt is a step forward." 
+  },
+  { 
+    url: '/quiz-memes/meme-2.jpg', 
+    text: "You're doing amazing! Science is all about persistence." 
+  },
+  { 
+    url: '/quiz-memes/meme-3.jpg', 
+    text: "Fantastic work! Remember, every expert was once a beginner." 
+  },
 ];
 
 const quizQuestions = [
@@ -117,6 +128,7 @@ export default function PipetteSimulator() {
   const [proTipText, setProTipText] = useState('');
   const [showQuizModal, setShowQuizModal] = useState(false);
   const [showQuizResults, setShowQuizResults] = useState(false);
+  const [selectedMeme, setSelectedMeme] = useState<{ url: string; text: string } | null>(null);
   const [quizData, setQuizData] = useState({
     currentQuestionIndex: 0,
     score: 0,
@@ -1018,6 +1030,7 @@ export default function PipetteSimulator() {
       questions,
     });
     setQuizFeedback({ show: false, isCorrect: false, explanation: '' });
+    setSelectedMeme(null); // Reset meme selection for new quiz
     setShowQuizModal(true);
   };
 
@@ -1051,6 +1064,9 @@ export default function PipetteSimulator() {
 
   const endQuiz = () => {
     setShowQuizModal(false);
+    // Select a random meme once (client-side only) to avoid hydration issues
+    const randomMeme = memes[Math.floor(Math.random() * memes.length)];
+    setSelectedMeme(randomMeme);
     // Small delay to ensure modal closes before results open
     setTimeout(() => {
       setShowQuizResults(true);
@@ -1059,6 +1075,7 @@ export default function PipetteSimulator() {
 
   const retryIncorrectQuestions = () => {
     setShowQuizResults(false);
+    setSelectedMeme(null); // Reset meme selection
     startQuiz(quizData.incorrectQuestions);
   };
 
@@ -1754,18 +1771,44 @@ export default function PipetteSimulator() {
             <p id="quiz-results-message" className="mb-4 font-semibold">
               You scored {quizData.score} out of {quizData.questions.length}.
             </p>
-            <Image
-              id="quiz-meme"
-              src={memes[Math.floor(Math.random() * memes.length)].url}
-              alt="Encouraging meme"
-              width={320}
-              height={240}
-              className="max-w-xs mx-auto rounded-md shadow-lg mb-4"
-              unoptimized
-            />
-            <p id="quiz-results-encouragement" className="text-sm text-gray-600 mb-6">
-              {memes[Math.floor(Math.random() * memes.length)].text}
-            </p>
+            {selectedMeme ? (
+              <>
+                <div className="relative w-full max-w-xs mx-auto mb-4 rounded-md overflow-hidden shadow-lg bg-gray-100 min-h-[240px] flex items-center justify-center">
+                  <Image
+                    id="quiz-meme"
+                    src={selectedMeme.url}
+                    alt="Encouraging meme"
+                    width={320}
+                    height={240}
+                    className="max-w-xs mx-auto rounded-md"
+                    unoptimized
+                    onError={(e) => {
+                      // Fallback if image fails to load
+                      const target = e.target as HTMLImageElement;
+                      target.style.display = 'none';
+                      const parent = target.parentElement;
+                      if (parent) {
+                        parent.innerHTML = '<div class="text-gray-400 text-center p-8"><p class="text-lg">🎉</p><p class="text-sm mt-2">Great job!</p></div>';
+                      }
+                    }}
+                  />
+                </div>
+                <p id="quiz-results-encouragement" className="text-sm text-gray-600 mb-6 px-4">
+                  {selectedMeme.text}
+                </p>
+              </>
+            ) : (
+              <div className="mb-6">
+                <div className="w-full max-w-xs mx-auto h-60 bg-gray-100 rounded-md flex items-center justify-center mb-4">
+                  <p className="text-gray-400 text-lg">🎉</p>
+                </div>
+                <p className="text-sm text-gray-600 mb-6 px-4">
+                  {quizData.score === quizData.questions.length 
+                    ? "Perfect score! You're a pipetting master!" 
+                    : "Great effort! Keep practicing to improve your skills."}
+                </p>
+              </div>
+            )}
             <div className="flex justify-center space-x-4">
               {quizData.incorrectQuestions.length > 0 && (
                 <button

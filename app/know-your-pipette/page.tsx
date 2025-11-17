@@ -4,8 +4,10 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function KnowYourPipettePage() {
+  const { user, updateUserProfile } = useAuth();
   const containerRef = useRef<HTMLDivElement>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -33,6 +35,25 @@ export default function KnowYourPipettePage() {
     lockedRotation: boolean;
   } | null>(null);
   const showLearningPageRef = useRef(false);
+
+  // Mark step 2 as completed when user visits this page
+  useEffect(() => {
+    if (user?.email) {
+      localStorage.setItem(`visited_know-your-pipette_${user.email}`, 'true');
+      // Update roadmap completion
+      const stored = localStorage.getItem(`roadmap_${user.email}`);
+      const completed = stored ? new Set(JSON.parse(stored)) : new Set<number>();
+      completed.add(2);
+      localStorage.setItem(`roadmap_${user.email}`, JSON.stringify(Array.from(completed)));
+      
+      // Save to Firebase
+      updateUserProfile({
+        roadmapProgress: Array.from(completed),
+      }).catch((error) => {
+        console.error('Error saving roadmap progress:', error);
+      });
+    }
+  }, [user, updateUserProfile]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -91,7 +112,7 @@ export default function KnowYourPipettePage() {
     const directionalLight3 = new THREE.DirectionalLight(0xffffff, 0.8);
     directionalLight3.position.set(0, 5, 0);
     scene.add(directionalLight3);
-    
+
     // Add a hemisphere light for more even illumination
     const hemisphereLight = new THREE.HemisphereLight(0xffffff, 0x444444, 1.0);
     hemisphereLight.position.set(0, 10, 0);
@@ -450,7 +471,7 @@ export default function KnowYourPipettePage() {
         // Do nothing - camera stays in place
       } else {
         // Normal zoom
-        controls.zoom += event.deltaY * -0.001;
+      controls.zoom += event.deltaY * -0.001;
         controls.zoom = Math.max(0.1, Math.min(10, controls.zoom)); // Increased max zoom for better zooming capability
       }
     };
@@ -477,7 +498,7 @@ export default function KnowYourPipettePage() {
 
     // Store model center for camera targeting (will be updated when model loads)
     const modelCenter = new THREE.Vector3(3.08, -8.07, -0.84); // Model center position
-    
+
     // Store refs
     sceneRef.current = {
       scene,
@@ -596,7 +617,7 @@ export default function KnowYourPipettePage() {
 
       // Only render if learning page is not shown
       if (!showLearningPageRef.current) {
-        renderer.render(scene, camera);
+      renderer.render(scene, camera);
       }
     };
 
@@ -850,37 +871,37 @@ export default function KnowYourPipettePage() {
       {/* 3D Viewer - Full screen - Hide when learning page is shown */}
       {!showLearningPage && (
         <div className="relative z-10" style={{ height: '100vh', backgroundColor: 'transparent' }}>
-          <div
-            ref={containerRef}
-            className="w-full h-full relative z-20"
-            style={{ cursor: 'grab', position: 'relative', backgroundColor: 'transparent' }}
-          />
+        <div
+          ref={containerRef}
+          className="w-full h-full relative z-20"
+          style={{ cursor: 'grab', position: 'relative', backgroundColor: 'transparent' }}
+        />
         
-          {/* Loading Overlay */}
-          {isLoading && (
-            <div className="absolute inset-0 bg-white/80 backdrop-blur-sm flex items-center justify-center z-30">
-              <div className="text-center">
-                <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-[#9448B0] mb-4"></div>
-                <p className="text-[#001C3D] font-semibold">Loading 3D Model...</p>
-              </div>
+        {/* Loading Overlay */}
+        {isLoading && (
+          <div className="absolute inset-0 bg-white/80 backdrop-blur-sm flex items-center justify-center z-30">
+            <div className="text-center">
+              <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-[#9448B0] mb-4"></div>
+              <p className="text-[#001C3D] font-semibold">Loading 3D Model...</p>
             </div>
-          )}
+          </div>
+        )}
 
-          {/* Error Overlay */}
-          {error && (
-            <div className="absolute inset-0 bg-white/80 backdrop-blur-sm flex items-center justify-center z-30">
-              <div className="text-center bg-white rounded-lg p-6 shadow-xl max-w-md mx-4">
-                <p className="text-red-600 font-semibold mb-2">Error Loading Model</p>
-                <p className="text-gray-700 text-sm mb-4">{error}</p>
-                <button
-                  onClick={() => window.location.reload()}
-                  className="bg-[#9448B0] text-white px-4 py-2 rounded-lg hover:bg-[#A058C0] transition-colors"
-                >
-                  Retry
-                </button>
-              </div>
+        {/* Error Overlay */}
+        {error && (
+          <div className="absolute inset-0 bg-white/80 backdrop-blur-sm flex items-center justify-center z-30">
+            <div className="text-center bg-white rounded-lg p-6 shadow-xl max-w-md mx-4">
+              <p className="text-red-600 font-semibold mb-2">Error Loading Model</p>
+              <p className="text-gray-700 text-sm mb-4">{error}</p>
+              <button
+                onClick={() => window.location.reload()}
+                className="bg-[#9448B0] text-white px-4 py-2 rounded-lg hover:bg-[#A058C0] transition-colors"
+              >
+                Retry
+              </button>
             </div>
-          )}
+          </div>
+        )}
         
         {/* Instructions Overlay - COMMENTED OUT */}
         {/* {!isLoading && !error && (
@@ -960,7 +981,7 @@ export default function KnowYourPipettePage() {
             </div>
           </div>
         )}
-        </div>
+      </div>
       )}
 
       {/* Object Buttons - Show after animation - Outside 3D viewer so they can show on learning page */}

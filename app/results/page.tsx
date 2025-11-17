@@ -6,94 +6,97 @@ export default function ResultsPage() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div className="bg-white/95 backdrop-blur-sm rounded-xl p-6 shadow-lg">
-          <h2 className="text-3xl font-bold text-[#001C3D] mb-6">📊 Results & Feedback</h2>
-          
-          {/* Performance Summary */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-            <div className="bg-blue-50 border-2 border-blue-500 rounded-lg p-4">
-              <div className="text-sm text-gray-600 mb-1">Accuracy</div>
-              <div className="text-3xl font-bold text-blue-600">87%</div>
-            </div>
-            <div className="bg-green-50 border-2 border-green-500 rounded-lg p-4">
-              <div className="text-sm text-gray-600 mb-1">Speed Rating</div>
-              <div className="text-3xl font-bold text-green-600">Fast</div>
-            </div>
-            <div className="bg-red-50 border-2 border-red-500 rounded-lg p-4">
-              <div className="text-sm text-gray-600 mb-1">Error Count</div>
-              <div className="text-3xl font-bold text-red-600">2</div>
-            </div>
-          </div>
+        <div>
+          <h1 className="text-2xl font-semibold text-slate-900 mb-2">Results & Performance</h1>
+          <p className="text-slate-600">Review your performance history and track your progress</p>
+        </div>
 
-          {/* Strengths & Weaknesses */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-            <div className="bg-green-50 border-2 border-green-500 rounded-lg p-4">
-              <h3 className="text-xl font-bold text-green-800 mb-3">✅ Strengths</h3>
-              <ul className="space-y-2">
-                <li className="flex items-center gap-2">
-                  <span>✓</span>
-                  <span>Excellent pipette control</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <span>✓</span>
-                  <span>Consistent volume accuracy</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <span>✓</span>
-                  <span>Good technique on standard liquids</span>
-                </li>
-              </ul>
-            </div>
-            <div className="bg-yellow-50 border-2 border-yellow-500 rounded-lg p-4">
-              <h3 className="text-xl font-bold text-yellow-800 mb-3">⚠️ Areas for Improvement</h3>
-              <ul className="space-y-2">
-                <li className="flex items-center gap-2">
-                  <span>→</span>
-                  <span>Slower release for viscous liquids</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <span>→</span>
-                  <span>Practice reverse pipetting technique</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <span>→</span>
-                  <span>Improve multichannel coordination</span>
-                </li>
-              </ul>
-            </div>
+        {/* Performance Summary */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="bg-white border border-slate-200 rounded-lg p-6">
+            <div className="text-sm text-slate-600 mb-1">Overall Accuracy</div>
+            <div className="text-3xl font-semibold text-slate-900">87%</div>
+            <div className="text-xs text-slate-500 mt-1">Based on last 10 sessions</div>
           </div>
+          <div className="bg-white border border-slate-200 rounded-lg p-6">
+            <div className="text-sm text-slate-600 mb-1">Average Speed</div>
+            <div className="text-3xl font-semibold text-slate-900">Good</div>
+            <div className="text-xs text-slate-500 mt-1">Within acceptable range</div>
+          </div>
+          <div className="bg-white border border-slate-200 rounded-lg p-6">
+            <div className="text-sm text-slate-600 mb-1">Total Errors</div>
+            <div className="text-3xl font-semibold text-slate-900">2</div>
+            <div className="text-xs text-slate-500 mt-1">Last 30 days</div>
+          </div>
+        </div>
 
-          {/* Suggested Modules */}
-          <div className="bg-white border-2 border-gray-300 rounded-lg p-4 mb-6">
-            <h3 className="text-xl font-bold text-[#001C3D] mb-3">📚 Suggested Modules</h3>
-            <div className="space-y-2">
-              {[
-                'Advanced Reverse Pipetting',
-                'Multichannel Techniques',
-                'Viscous Liquid Handling'
-              ].map((module, idx) => (
-                <div key={idx} className="flex items-center justify-between bg-gray-50 rounded-lg p-3">
-                  <span className="font-semibold text-[#001C3D]">{module}</span>
-                  <button className="bg-[#9448B0] text-white px-4 py-1 rounded-lg hover:bg-[#A058C0] transition-colors text-sm">
-                    Start
-                  </button>
-                </div>
-              ))}
-            </div>
+        {/* Strengths & Weaknesses */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="bg-white border border-slate-200 rounded-lg p-6">
+            <h3 className="text-lg font-semibold text-slate-900 mb-4">Strengths</h3>
+            <ul className="space-y-2">
+              <li className="flex items-start gap-2 text-slate-700">
+                <span className="text-green-600 mt-0.5">✓</span>
+                <span>Excellent pipette control and handling</span>
+              </li>
+              <li className="flex items-start gap-2 text-slate-700">
+                <span className="text-green-600 mt-0.5">✓</span>
+                <span>Consistent volume accuracy</span>
+              </li>
+              <li className="flex items-start gap-2 text-slate-700">
+                <span className="text-green-600 mt-0.5">✓</span>
+                <span>Good technique with standard liquids</span>
+              </li>
+            </ul>
           </div>
+          <div className="bg-white border border-slate-200 rounded-lg p-6">
+            <h3 className="text-lg font-semibold text-slate-900 mb-4">Areas for Improvement</h3>
+            <ul className="space-y-2">
+              <li className="flex items-start gap-2 text-slate-700">
+                <span className="text-slate-400 mt-0.5">→</span>
+                <span>Slower release for viscous liquids</span>
+              </li>
+              <li className="flex items-start gap-2 text-slate-700">
+                <span className="text-slate-400 mt-0.5">→</span>
+                <span>Practice reverse pipetting technique</span>
+              </li>
+              <li className="flex items-start gap-2 text-slate-700">
+                <span className="text-slate-400 mt-0.5">→</span>
+                <span>Improve multichannel coordination</span>
+              </li>
+            </ul>
+          </div>
+        </div>
 
-          {/* Actions */}
-          <div className="flex gap-4">
-            <button className="flex-1 bg-[#3b82f6] text-white font-bold py-3 px-6 rounded-lg hover:bg-[#2563eb] transition-colors">
-              Download Report
-            </button>
-            <button className="flex-1 bg-[#22c55e] text-white font-bold py-3 px-6 rounded-lg hover:bg-[#16a34a] transition-colors">
-              Share with Instructor
-            </button>
+        {/* Suggested Modules */}
+        <div className="bg-white border border-slate-200 rounded-lg p-6">
+          <h3 className="text-lg font-semibold text-slate-900 mb-4">Recommended Practice</h3>
+          <div className="space-y-3">
+            {[
+              'Advanced Reverse Pipetting',
+              'Multichannel Techniques',
+              'Viscous Liquid Handling'
+            ].map((module, idx) => (
+              <div key={idx} className="flex items-center justify-between p-4 bg-slate-50 rounded-lg border border-slate-200">
+                <span className="font-medium text-slate-900">{module}</span>
+                <button className="bg-slate-900 text-white px-4 py-2 rounded-lg hover:bg-slate-800 transition-colors text-sm font-medium">
+                  Start Practice
+                </button>
+              </div>
+            ))}
           </div>
+        </div>
+
+        {/* Actions */}
+        <div className="flex gap-4">
+          <button className="flex-1 bg-slate-900 text-white font-medium py-3 px-6 rounded-lg hover:bg-slate-800 transition-colors">
+            Download Report
+          </button>
+          <button className="flex-1 bg-white border-2 border-slate-300 text-slate-900 font-medium py-3 px-6 rounded-lg hover:border-slate-400 hover:bg-slate-50 transition-colors">
+            Share with Instructor
+          </button>
         </div>
       </div>
     </DashboardLayout>
   );
 }
-
