@@ -11,6 +11,7 @@ export default function HomePage() {
   const router = useRouter();
   const [completedSteps, setCompletedSteps] = useState<Set<number>>(new Set());
   const [showOnboardingModal, setShowOnboardingModal] = useState(false);
+  const [roadmapExpanded, setRoadmapExpanded] = useState(false);
 
   useEffect(() => {
     if (!loading) {
@@ -179,6 +180,13 @@ export default function HomePage() {
     },
   ];
 
+  // Check if all roadmap steps are completed (steps 1-5)
+  const allStepsCompleted = completedSteps.has(1) && 
+                            completedSteps.has(2) && 
+                            completedSteps.has(3) && 
+                            completedSteps.has(4) && 
+                            completedSteps.has(5);
+
   return (
     <DashboardLayout>
       <div className="space-y-8">
@@ -194,11 +202,78 @@ export default function HomePage() {
           </p>
         </div>
 
+        {/* Main Actions Grid - Show first if roadmap is completed */}
+        {allStepsCompleted && (
+          <div>
+            <h2 className="text-xl font-semibold text-slate-900 mb-4">Explore the rest</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {mainActions.map((action, idx) => (
+                <Link
+                  key={idx}
+                  href={action.href}
+                  className={`group block p-6 rounded-lg border-2 transition-all duration-200 ${
+                    action.primary
+                      ? 'bg-slate-900 border-slate-900 text-white hover:bg-slate-800 hover:border-slate-800'
+                      : 'bg-white border-slate-200 text-slate-900 hover:border-slate-400 hover:shadow-md'
+                  }`}
+                >
+                  <div className={`mb-4 ${action.primary ? 'text-white' : 'text-slate-700'}`}>
+                    {action.icon}
+                  </div>
+                  <h3 className={`text-lg font-semibold mb-2 ${action.primary ? 'text-white' : 'text-slate-900'}`}>
+                    {action.title}
+                  </h3>
+                  <p className={`text-sm ${action.primary ? 'text-slate-300' : 'text-slate-600'}`}>
+                    {action.description}
+                  </p>
+                  <div className={`mt-4 text-sm font-medium flex items-center gap-2 ${
+                    action.primary ? 'text-white' : 'text-slate-700 group-hover:text-slate-900'
+                  }`}>
+                    <span>Get started</span>
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Learning Roadmap */}
-        <div className="bg-white border border-slate-200 rounded-xl p-8 shadow-md">
-          <h2 className="text-2xl font-semibold text-slate-900 mb-6">Your Learning Roadmap</h2>
+        <div className={`bg-white border border-slate-200 rounded-xl shadow-md transition-all duration-300 ${
+          allStepsCompleted ? 'p-4' : 'p-8'
+        }`}>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className={`font-semibold text-slate-900 ${allStepsCompleted ? 'text-xl' : 'text-2xl'}`}>
+              Your Learning Roadmap
+            </h2>
+            {allStepsCompleted && (
+              <button
+                onClick={() => setRoadmapExpanded(!roadmapExpanded)}
+                className="flex items-center gap-2 text-slate-600 hover:text-slate-900 transition-colors"
+                aria-label={roadmapExpanded ? 'Collapse roadmap' : 'Expand roadmap'}
+              >
+                <span className="text-sm font-medium">
+                  {roadmapExpanded ? 'Hide' : 'Show'} completed roadmap
+                </span>
+                <svg 
+                  className={`w-5 h-5 transition-transform duration-200 ${roadmapExpanded ? 'rotate-180' : ''}`}
+                  fill="none" 
+                  stroke="currentColor" 
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+            )}
+          </div>
           
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className={`grid grid-cols-1 lg:grid-cols-3 gap-8 transition-all duration-300 ${
+            allStepsCompleted && !roadmapExpanded 
+              ? 'max-h-0 opacity-0 overflow-hidden' 
+              : 'max-h-[2000px] opacity-100'
+          }`}>
             {/* Roadmap Steps */}
             <div className="lg:col-span-2 relative">
             {[
@@ -341,41 +416,43 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* Main Actions Grid */}
-        <div>
-          <h2 className="text-xl font-semibold text-slate-900 mb-4">Explore the rest</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {mainActions.map((action, idx) => (
-              <Link
-                key={idx}
-                href={action.href}
-                className={`group block p-6 rounded-lg border-2 transition-all duration-200 ${
-                  action.primary
-                    ? 'bg-slate-900 border-slate-900 text-white hover:bg-slate-800 hover:border-slate-800'
-                    : 'bg-white border-slate-200 text-slate-900 hover:border-slate-400 hover:shadow-md'
-                }`}
-              >
-                <div className={`mb-4 ${action.primary ? 'text-white' : 'text-slate-700'}`}>
-                  {action.icon}
-                </div>
-                <h3 className={`text-lg font-semibold mb-2 ${action.primary ? 'text-white' : 'text-slate-900'}`}>
-                  {action.title}
-                </h3>
-                <p className={`text-sm ${action.primary ? 'text-slate-300' : 'text-slate-600'}`}>
-                  {action.description}
-                </p>
-                <div className={`mt-4 text-sm font-medium flex items-center gap-2 ${
-                  action.primary ? 'text-white' : 'text-slate-700 group-hover:text-slate-900'
-                }`}>
-                  <span>Get started</span>
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
-                </div>
-              </Link>
-            ))}
+        {/* Main Actions Grid - Show after roadmap if not completed */}
+        {!allStepsCompleted && (
+          <div>
+            <h2 className="text-xl font-semibold text-slate-900 mb-4">Explore the rest</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {mainActions.map((action, idx) => (
+                <Link
+                  key={idx}
+                  href={action.href}
+                  className={`group block p-6 rounded-lg border-2 transition-all duration-200 ${
+                    action.primary
+                      ? 'bg-slate-900 border-slate-900 text-white hover:bg-slate-800 hover:border-slate-800'
+                      : 'bg-white border-slate-200 text-slate-900 hover:border-slate-400 hover:shadow-md'
+                  }`}
+                >
+                  <div className={`mb-4 ${action.primary ? 'text-white' : 'text-slate-700'}`}>
+                    {action.icon}
+                  </div>
+                  <h3 className={`text-lg font-semibold mb-2 ${action.primary ? 'text-white' : 'text-slate-900'}`}>
+                    {action.title}
+                  </h3>
+                  <p className={`text-sm ${action.primary ? 'text-slate-300' : 'text-slate-600'}`}>
+                    {action.description}
+                  </p>
+                  <div className={`mt-4 text-sm font-medium flex items-center gap-2 ${
+                    action.primary ? 'text-white' : 'text-slate-700 group-hover:text-slate-900'
+                  }`}>
+                    <span>Get started</span>
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </div>
+                </Link>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
 
       </div>
 

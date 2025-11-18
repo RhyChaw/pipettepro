@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import Link from 'next/link';
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import TutorialOverlay from './TutorialOverlay';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -221,8 +222,11 @@ export default function PipetteSimulator() {
     const height = labContainer.clientHeight;
 
     const camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 1000);
-    camera.position.set(0, 8, 14);
-    camera.lookAt(0, 1, 0);
+    // Position camera closer and adjust angle to look upwards
+    camera.position.set(0, 6, 7); // Moved forward by 3 units (from z=10 to z=7)
+    // Look at a point 20 degrees above the previous angle
+    // Calculate: distance from camera to lookAt ≈ 7.83, rotate 20° up: y = 2.5 + 7.83 * sin(20°) ≈ 5.2
+    camera.lookAt(0, 5.2, 0); // Looking 20 degrees higher (from y=2.5 to y=5.2)
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(width, height);
@@ -237,63 +241,248 @@ export default function PipetteSimulator() {
     directionalLight.castShadow = true;
     scene.add(directionalLight);
 
-    // Create lab bench
-    const benchGeo = new THREE.BoxGeometry(15, 0.2, 8);
-    const benchMat = new THREE.MeshStandardMaterial({ color: 0xcccccc, roughness: 0.4, metalness: 0.1 });
-    const labBench = new THREE.Mesh(benchGeo, benchMat);
-    labBench.receiveShadow = true;
-    scene.add(labBench);
+    // Load chemistry lab table GLB model
+    const loader = new GLTFLoader();
+    let labTable: THREE.Group | null = null;
+    let tableTopY = 0.2; // Default table top height (will be updated after loading)
+    
+    // Store references to objects that need to be repositioned after table loads
+    const objectsToReposition: Array<{ obj: THREE.Object3D; originalY: number }> = [];
+    
+    // Create intersect plane (will be updated after table loads)
+    const intersectPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -tableTopY);
+    
+    loader.load(
+      '/chemistry_lab_table.glb',
+      (gltf) => {
+        labTable = gltf.scene;
+        
+        // Calculate bounding box to determine table dimensions
+        const box = new THREE.Box3().setFromObject(labTable);
+        const size = box.getSize(new THREE.Vector3());
+        const center = box.getCenter(new THREE.Vector3());
+        
+        // Scale table to 3x size
+        const scaleFactor = 3;
+        labTable.scale.set(scaleFactor, scaleFactor, scaleFactor);
+        
+        // Recalculate bounding box after scaling
+        const scaledBox = new THREE.Box3().setFromObject(labTable);
+        const scaledSize = scaledBox.getSize(new THREE.Vector3());
+        const scaledCenter = scaledBox.getCenter(new THREE.Vector3());
+        
+        // Position table so its top surface is at y = 0.2 + 3.5 = 3.7 (moved up by 3.5 units total: 2.5 + 1.5 - 0.5)
+        // We'll assume the table's top is at the top of its bounding box
+        labTable.position.set(0, 0.2 + 3.5 - (scaledBox.max.y - scaledCenter.y), 0);
+        
+        // Update table top Y position for positioning other objects
+        tableTopY = scaledBox.max.y;
+        
+        // Reposition all objects that should be on top of the table
+        objectsToReposition.forEach(({ obj, originalY }) => {
+          // Position objects directly on the table surface
+          if (obj !== wasteBin) {
+            obj.position.y = tableTopY;
+          } else {
+            // For waste bin, update its position if it has already loaded
+            // The bin's position will be set in its GLB loader callback
+            // But we need to update z position to match beakers' z position
+            if (obj.position.z !== undefined) {
+              // Keep the z position but ensure y is correct
+              // The y will be set when the GLB loads
+            }
+          }
+        });
+        
+        // Update intersect plane
+        intersectPlane.constant = -tableTopY;
+        
+        // Enable shadows
+        labTable.traverse((child) => {
+          if (child instanceof THREE.Mesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+          }
+        });
+        
+        scene.add(labTable);
+        
+        // Add grid helper to visualize coordinate system on table surface
+        const gridHelper = new THREE.GridHelper(40, 40, 0x666666, 0x999999);
+        gridHelper.position.y = tableTopY + 0.001; // Slightly above table surface to avoid z-fighting
+        scene.add(gridHelper);
+      },
+      undefined,
+      (error) => {
+        console.error('Error loading lab table:', error);
+        // Fallback to simple bench if GLB fails to load
+        const benchGeo = new THREE.BoxGeometry(15, 0.2, 8);
+        const benchMat = new THREE.MeshStandardMaterial({ color: 0xcccccc, roughness: 0.4, metalness: 0.1 });
+        const labBench = new THREE.Mesh(benchGeo, benchMat);
+        labBench.receiveShadow = true;
+        scene.add(labBench);
+        tableTopY = 0.2;
+        // No need to reposition objects if using fallback bench
+      }
+    );
 
-    const intersectPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.1);
+    // Helper function to load beaker GLB and create container
+    const createBeakerContainer = async (
+      x: number, 
+      z: number, 
+      initialLiquidRatio: number, 
+      color: number
+    ): Promise<Container> => {
+      return new Promise((resolve) => {
+        const group = new THREE.Group();
+        const adjustedX = x * 0.4;
+        const adjustedZ = z + 1 - 0.5; // Move back 2.5 units (subtract from z)
+        const initialY = tableTopY;
+        group.position.set(adjustedX, initialY, adjustedZ);
+        objectsToReposition.push({ obj: group, originalY: initialY });
 
-    // Helper function to create containers
-    const createContainer = (x: number, z: number, radius: number, height: number, initialLiquidRatio: number, color: number): Container => {
-      const group = new THREE.Group();
-      group.position.set(x, 0.1, z);
-      const wallThickness = 0.05;
-
-      const points: THREE.Vector2[] = [];
-      points.push(new THREE.Vector2(radius * 0.95, 0));
-      points.push(new THREE.Vector2(radius, 0));
-      points.push(new THREE.Vector2(radius, height - 0.2));
-      points.push(new THREE.Vector2(radius + 0.15, height));
-
-      const beakerGeo = new THREE.LatheGeometry(points, 32);
-      const beakerMat = new THREE.MeshStandardMaterial({
-        color: 0xffffff,
-        transparent: true,
-        opacity: 0.3,
-        roughness: 0.1,
-        metalness: 0.1,
-        side: THREE.DoubleSide,
+        const beakerLoader = new GLTFLoader();
+        beakerLoader.load(
+          '/beaker.glb',
+          (gltf) => {
+            const beakerModel = gltf.scene.clone();
+            
+            // Calculate bounding box to scale appropriately
+            const box = new THREE.Box3().setFromObject(beakerModel);
+            const size = box.getSize(new THREE.Vector3());
+            const maxDim = Math.max(size.x, size.y, size.z);
+            const targetSize = 1.0; // Target size for beaker (doubled from 0.5)
+            const scale = targetSize / maxDim;
+            beakerModel.scale.set(scale, scale, scale);
+            
+            // Enable shadows
+            beakerModel.traverse((child) => {
+              if (child instanceof THREE.Mesh) {
+                child.castShadow = true;
+                child.receiveShadow = true;
+              }
+            });
+            
+            group.add(beakerModel);
+            
+            // Create liquid inside beaker
+            const liquidHeight = size.y * scale * initialLiquidRatio;
+            const liquidRadius = (size.x * scale) / 2 * 0.8; // 80% of beaker radius
+            const liquidGeo = new THREE.CylinderGeometry(liquidRadius, liquidRadius, liquidHeight, 32);
+            const liquidMat = new THREE.MeshStandardMaterial({ color: color, roughness: 0.2, transparent: true, opacity: 0.8 });
+            const liquidMesh = new THREE.Mesh(liquidGeo, liquidMat);
+            liquidMesh.position.y = liquidHeight / 2;
+            group.add(liquidMesh);
+            
+            // Create 3D text label above beaker
+            const createTextSprite = (text: string) => {
+              const canvas = document.createElement('canvas');
+              const context = canvas.getContext('2d')!;
+              canvas.width = 256;
+              canvas.height = 64;
+              context.fillStyle = 'rgba(255, 255, 255, 0.9)';
+              context.fillRect(0, 0, canvas.width, canvas.height);
+              context.fillStyle = '#1e293b';
+              context.font = 'bold 24px Arial';
+              context.textAlign = 'center';
+              context.textBaseline = 'middle';
+              context.fillText(text, canvas.width / 2, canvas.height / 2);
+              const texture = new THREE.CanvasTexture(canvas);
+              const spriteMaterial = new THREE.SpriteMaterial({ map: texture, transparent: true });
+              const sprite = new THREE.Sprite(spriteMaterial);
+              sprite.scale.set(1, 0.25, 1);
+              sprite.position.y = size.y * scale + 0.5; // 0.5 units above beaker
+              return sprite;
+            };
+            
+            const labelText = adjustedX < 0 ? 'Destination Beaker' : 'Source Beaker';
+            const labelSprite = createTextSprite(labelText);
+            group.add(labelSprite);
+            
+            const totalVolume = Math.PI * Math.pow(liquidRadius, 2) * liquidHeight;
+            const currentVolume = totalVolume * initialLiquidRatio;
+            
+            resolve({
+              group,
+              liquidMesh,
+              initialLiquidRatio,
+              height: size.y * scale,
+              totalVolume: totalVolume,
+              currentColor: new THREE.Color(color),
+              currentVolume: currentVolume,
+            });
+          },
+          undefined,
+          (error) => {
+            console.error('Error loading beaker:', error);
+            // Fallback to simple geometry
+            const fallbackGeo = new THREE.CylinderGeometry(0.5, 0.5, 1, 32);
+            const fallbackMat = new THREE.MeshStandardMaterial({ color: 0xffffff, transparent: true, opacity: 0.3 });
+            const fallbackMesh = new THREE.Mesh(fallbackGeo, fallbackMat);
+            group.add(fallbackMesh);
+            
+            const liquidGeo = new THREE.CylinderGeometry(0.4, 0.4, 1 * initialLiquidRatio, 32);
+            const liquidMat = new THREE.MeshStandardMaterial({ color: color, roughness: 0.2 });
+            const liquidMesh = new THREE.Mesh(liquidGeo, liquidMat);
+            liquidMesh.position.y = (1 * initialLiquidRatio) / 2;
+            group.add(liquidMesh);
+            
+            // Text labels removed
+            
+            resolve({
+              group,
+              liquidMesh,
+              initialLiquidRatio,
+              height: 1,
+              totalVolume: Math.PI * 0.4 * 0.4 * 1,
+              currentColor: new THREE.Color(color),
+              currentVolume: Math.PI * 0.4 * 0.4 * 1 * initialLiquidRatio,
+            });
+          }
+        );
       });
-      const beakerMesh = new THREE.Mesh(beakerGeo, beakerMat);
-      group.add(beakerMesh);
-
-      const liquidHeight = (height - wallThickness) * initialLiquidRatio;
-      const liquidGeo = new THREE.CylinderGeometry(radius - wallThickness, radius - wallThickness, liquidHeight, 32);
-      const liquidMat = new THREE.MeshStandardMaterial({ color: color, roughness: 0.2 });
-      const liquidMesh = new THREE.Mesh(liquidGeo, liquidMat);
-      liquidMesh.position.y = liquidHeight / 2 + wallThickness;
-      group.add(liquidMesh);
-
-      const totalVolume = Math.PI * Math.pow(radius - wallThickness, 2) * (height - wallThickness);
-      const currentVolume = totalVolume * initialLiquidRatio;
-
-      return {
-        group,
-        liquidMesh,
-        initialLiquidRatio,
-        height: height,
-        totalVolume: totalVolume,
-        currentColor: new THREE.Color(color),
-        currentVolume: currentVolume,
-      };
     };
 
-    const destContainer = createContainer(-4, 0, 1.5, 2.5, 0.2, 0x60a5fa);
-    const sourceContainer = createContainer(4, 0, 0.8, 2.0, 0.9, 0x001c3d);
-    scene.add(sourceContainer.group, destContainer.group);
+    // Create placeholder containers (will be replaced when GLB models load)
+    const placeholderGroup = new THREE.Group();
+    const placeholderLiquid = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.1, 0.1, 0.1, 8),
+      new THREE.MeshStandardMaterial({ color: 0x000000 })
+    );
+    placeholderGroup.add(placeholderLiquid);
+    placeholderGroup.visible = false;
+    
+    const placeholderContainer: Container = {
+      group: placeholderGroup,
+      liquidMesh: placeholderLiquid,
+      initialLiquidRatio: 0,
+      height: 1,
+      totalVolume: 1,
+      currentColor: new THREE.Color(0x000000),
+      currentVolume: 0,
+    };
+    
+    // Load beakers
+    let destContainer: Container = placeholderContainer;
+    let sourceContainer: Container = placeholderContainer;
+    
+    createBeakerContainer(-4, 0, 0.2, 0x60a5fa).then((container) => {
+      destContainer = container;
+      scene.add(container.group);
+      // Update sceneRef when container is loaded
+      if (sceneRef.current) {
+        sceneRef.current.destContainer = container;
+      }
+    });
+    
+    createBeakerContainer(4, 0, 0.9, 0x001c3d).then((container) => {
+      sourceContainer = container;
+      scene.add(container.group);
+      // Update sceneRef when container is loaded
+      if (sceneRef.current) {
+        sceneRef.current.sourceContainer = container;
+      }
+    });
 
     // Create tip boxes
     const tipBoxes: Record<string, THREE.Group> = {};
@@ -321,7 +510,13 @@ export default function PipetteSimulator() {
         }
       }
       tipBoxGroup.add(baseMesh, lidMesh);
-      tipBoxGroup.position.set(0, 0.1, 2);
+      // Scale to quarter size (half of current half size)
+      tipBoxGroup.scale.set(0.25, 0.25, 0.25);
+      // Position on table, centered and visible
+      const initialY = tableTopY; // Start at table top, will be adjusted after table loads
+      const adjustedZ = 1; // Keep it visible on the table
+      tipBoxGroup.position.set(0, initialY, adjustedZ);
+      objectsToReposition.push({ obj: tipBoxGroup, originalY: initialY });
       return tipBoxGroup;
     };
 
@@ -332,14 +527,90 @@ export default function PipetteSimulator() {
       scene.add(tipBoxGroup);
     });
 
-    // Create waste bin
+    // Load waste bin GLB - position it in the middle but backwards
     const binGroup = new THREE.Group();
-    const binGeo = new THREE.CylinderGeometry(0.8, 0.7, 1.5, 16);
-    const binMat = new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.6 });
-    const binMesh = new THREE.Mesh(binGeo, binMat);
-    binMesh.position.y = 0.75;
-    binGroup.add(binMesh);
-    binGroup.position.set(6, 0.1, 2);
+    const initialY = tableTopY;
+    // Position in the middle (x = 0) and move back (increase z)
+    // Beakers are at z = 0 + 1 - 0.5 = 0.5, so move dustbin back by adding to z
+    const adjustedX = 0; // Middle
+    const adjustedZ = 0.5 + 2.5; // Move back 2.5 units from beakers (z = 3.0)
+    binGroup.position.set(adjustedX, initialY, adjustedZ);
+    objectsToReposition.push({ obj: binGroup, originalY: initialY });
+    
+    const binLoader = new GLTFLoader();
+    binLoader.load(
+      '/dustbin.glb',
+      (gltf) => {
+        const binModel = gltf.scene.clone();
+        
+        // Calculate bounding box to scale appropriately
+        const box = new THREE.Box3().setFromObject(binModel);
+        const size = box.getSize(new THREE.Vector3());
+        const maxDim = Math.max(size.x, size.y, size.z);
+        const targetSize = 1.0; // Target size for waste bin (doubled from 0.5)
+        const scale = targetSize / maxDim;
+        binModel.scale.set(scale, scale, scale);
+        
+        // Enable shadows
+        binModel.traverse((child) => {
+          if (child instanceof THREE.Mesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+          }
+        });
+        
+        binGroup.add(binModel);
+        
+        // Calculate final bounding box after scaling
+        const boxAfterScale = new THREE.Box3().setFromObject(binModel);
+        const binHeight = boxAfterScale.max.y - boxAfterScale.min.y;
+        const binSize = boxAfterScale.getSize(new THREE.Vector3());
+        
+        // Move waste bin up so its bottom sits on the table
+        // The bin's local min.y is negative (below center), so we need to offset by that
+        binGroup.position.y = tableTopY - boxAfterScale.min.y;
+        
+        // Ensure z position is correct (should be 3.0 - middle but backwards)
+        binGroup.position.z = 0.5 + 2.5; // Same as calculated earlier
+        
+        // Create 3D text label above waste bin
+        const createTextSprite = (text: string) => {
+          const canvas = document.createElement('canvas');
+          const context = canvas.getContext('2d')!;
+          canvas.width = 256;
+          canvas.height = 64;
+          context.fillStyle = 'rgba(255, 255, 255, 0.9)';
+          context.fillRect(0, 0, canvas.width, canvas.height);
+          context.fillStyle = '#1e293b';
+          context.font = 'bold 24px Arial';
+          context.textAlign = 'center';
+          context.textBaseline = 'middle';
+          context.fillText(text, canvas.width / 2, canvas.height / 2);
+          const texture = new THREE.CanvasTexture(canvas);
+          const spriteMaterial = new THREE.SpriteMaterial({ map: texture, transparent: true });
+          const sprite = new THREE.Sprite(spriteMaterial);
+          sprite.scale.set(1, 0.25, 1);
+          sprite.position.y = binSize.y + 0.5; // 0.5 units above bin
+          return sprite;
+        };
+        
+        const labelSprite = createTextSprite('Waste Bin');
+        binGroup.add(labelSprite);
+      },
+      undefined,
+      (error) => {
+        console.error('Error loading waste bin:', error);
+        // Fallback to simple geometry
+        const binGeo = new THREE.CylinderGeometry(0.8, 0.7, 1.5, 16);
+        const binMat = new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.6 });
+        const binMesh = new THREE.Mesh(binGeo, binMat);
+        binMesh.position.y = 0.75;
+        binGroup.add(binMesh);
+        
+        // Text labels removed
+      }
+    );
+    
     const wasteBin = binGroup;
     scene.add(wasteBin);
 
@@ -460,6 +731,7 @@ export default function PipetteSimulator() {
     const liquidAnimation: { mesh: THREE.Mesh; targetScaleY: number; speed: number } | null = null;
 
     // Store refs for use in handlers
+    // Note: sourceContainer and destContainer will be updated when GLB models load
     sceneRef.current = {
       scene,
       camera,
@@ -1210,7 +1482,7 @@ export default function PipetteSimulator() {
           background: '#ffffff',
         }}
       >
-        {/* Beaker Labels */}
+        {/* Beaker Labels - 3D HTML labels */}
         <div className="absolute bottom-32 left-1/4 z-20">
           <div className="bg-white/95 backdrop-blur-xl rounded-lg px-4 py-2 border-2 border-blue-400 shadow-lg">
             <p className="text-sm font-semibold text-slate-900">Source Beaker</p>
@@ -1219,6 +1491,11 @@ export default function PipetteSimulator() {
         <div className="absolute bottom-32 right-1/4 z-20">
           <div className="bg-white/95 backdrop-blur-xl rounded-lg px-4 py-2 border-2 border-blue-400 shadow-lg">
             <p className="text-sm font-semibold text-slate-900">Destination Beaker</p>
+          </div>
+        </div>
+        <div className="absolute bottom-32 left-1/2 transform -translate-x-1/2 z-20">
+          <div className="bg-white/95 backdrop-blur-xl rounded-lg px-4 py-2 border-2 border-red-400 shadow-lg">
+            <p className="text-sm font-semibold text-slate-900">Waste Bin</p>
           </div>
         </div>
         {/* Confetti and effects will be here */}
@@ -1608,10 +1885,9 @@ export default function PipetteSimulator() {
                       max="5"
                       step="0.05"
                       defaultValue="3"
-                      orient="vertical"
                       className="h-32 w-8"
                       style={{
-                        writingMode: 'bt-lr',
+                        writingMode: 'bt-lr' as React.CSSProperties['writingMode'],
                         WebkitAppearance: 'slider-vertical',
                       }}
                       onChange={(e) => {
