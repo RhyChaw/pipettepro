@@ -78,6 +78,11 @@ type TabType =
   | 'challenge'
   | 'leaderboard';
 
+type AssistantMessage = {
+  role: 'assistant' | 'user';
+  content: string;
+};
+
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const pathname = usePathname();
   const { userProfile } = useAuth();
@@ -85,9 +90,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const [particlePositions, setParticlePositions] = useState<Array<{ left: number; top: number }>>([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
-  const [assistantMessages, setAssistantMessages] = useState<
-    { role: 'assistant' | 'user'; content: string }[]
-  >([
+  const [assistantMessages, setAssistantMessages] = useState<AssistantMessage[]>([
     {
       role: 'assistant',
       content:
@@ -132,7 +135,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     const trimmed = assistantInput.trim();
     if (!trimmed || assistantLoading) return;
 
-    const newMessages = [...assistantMessages, { role: 'user', content: trimmed }];
+    const newMessages: AssistantMessage[] = [...assistantMessages, { role: 'user', content: trimmed }];
     setAssistantMessages(newMessages);
     setAssistantInput('');
     setAssistantLoading(true);

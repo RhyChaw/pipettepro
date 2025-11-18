@@ -15,6 +15,7 @@ interface QuizProgress {
 interface UserProfile {
   quizProgress?: QuizProgress[];
   level?: number;
+  highestLevel?: number;
 }
 
 interface HomeScreenProps {

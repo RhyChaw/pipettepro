@@ -27,6 +27,7 @@ interface UserProfile {
   profileComplete?: boolean;
   profilePictureUrl?: string;
   level?: number;
+  highestLevel?: number;
   onboardingCompleted?: boolean;
   roadmapProgress?: number[];
   canSkipKnowTools?: boolean;

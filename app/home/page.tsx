@@ -846,7 +846,7 @@ export default function HomePage() {
                   if (!user?.email) return;
                   
                   // Animate mascot image change and movement
-                  const mascotImg = document.getElementById('explore-mascot-img');
+                  const mascotImg = document.querySelector<HTMLImageElement>('#explore-mascot-img');
                   const mascotContainer = document.getElementById('explore-mascot-container');
                   
                   if (mascotImg && mascotContainer) {
