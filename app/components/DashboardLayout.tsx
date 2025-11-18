@@ -37,6 +37,35 @@ function TutorialButton() {
   );
 }
 
+function StickyNotesToggleButton() {
+  const [showTooltip, setShowTooltip] = useState(false);
+
+  const handleClick = () => {
+    window.dispatchEvent(new CustomEvent('toggleStickyNotes'));
+  };
+
+  return (
+    <>
+      <button
+        onClick={handleClick}
+        onMouseEnter={() => setShowTooltip(true)}
+        onMouseLeave={() => setShowTooltip(false)}
+        className="fixed top-36 left-4 z-50 bg-white border-2 border-slate-300 hover:bg-slate-50 text-slate-800 rounded-full w-12 h-12 shadow-lg transition-colors flex items-center justify-center"
+        aria-label="Open sticky notes"
+      >
+        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 6h13M8 12h13M8 18h7M3 6h.01M3 12h.01M3 18h.01" />
+        </svg>
+      </button>
+      {showTooltip && (
+        <div className="fixed top-36 left-20 z-50 bg-slate-900 text-white px-3 py-2 rounded-lg text-sm shadow-lg whitespace-nowrap">
+          Sticky notes
+        </div>
+      )}
+    </>
+  );
+}
+
 interface DashboardLayoutProps {
   children: React.ReactNode;
 }
@@ -46,9 +75,8 @@ type TabType =
   | 'simulation'
   | 'know-tools'
   | 'quiz'
-  | 'mistakes'
   | 'challenge'
-  | 'results';
+  | 'leaderboard';
 
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const pathname = usePathname();
@@ -56,6 +84,19 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const [hoveredTab, setHoveredTab] = useState<string | null>(null);
   const [particlePositions, setParticlePositions] = useState<Array<{ left: number; top: number }>>([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [assistantOpen, setAssistantOpen] = useState(false);
+  const [assistantMessages, setAssistantMessages] = useState<
+    { role: 'assistant' | 'user'; content: string }[]
+  >([
+    {
+      role: 'assistant',
+      content:
+        'Hi! I’m PipettePal. Ask me anything about pipetting technique, lab etiquette, or pipette care.',
+    },
+  ]);
+  const [assistantInput, setAssistantInput] = useState('');
+  const [assistantLoading, setAssistantLoading] = useState(false);
+  const [assistantError, setAssistantError] = useState<string | null>(null);
 
   // Generate random positions only on client side to avoid hydration mismatch
   useEffect(() => {
@@ -69,12 +110,11 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
   const tabs = [
     { id: 'dashboard' as TabType, name: 'Home', route: '/home' },
-    { id: 'simulation' as TabType, name: 'Simulation', route: '/simulator' },
     { id: 'know-tools' as TabType, name: 'Know the tools', route: '/know-your-pipette' },
     { id: 'quiz' as TabType, name: 'Quiz', route: '/quiz' },
-    { id: 'mistakes' as TabType, name: 'Mistakes', route: '/mistakes' },
-    { id: 'challenge' as TabType, name: 'Challenge', route: '/challenge' },
-    { id: 'results' as TabType, name: 'Results', route: '/results' },
+    { id: 'simulation' as TabType, name: 'Simulation (practice anything)', route: '/simulator' },
+    { id: 'challenge' as TabType, name: 'Challenges', route: '/challenge' },
+    { id: 'leaderboard' as TabType, name: 'Leaderboard', route: '/leaderboard' },
   ];
 
   const routeToTab: Record<string, TabType> = {
@@ -82,38 +122,78 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     '/simulator': 'simulation',
     '/know-your-pipette': 'know-tools',
     '/quiz': 'quiz',
-    '/mistakes': 'mistakes',
     '/challenge': 'challenge',
-    '/results': 'results',
+    '/leaderboard': 'leaderboard',
   };
 
   const activeTab = routeToTab[pathname] || 'dashboard';
 
+  const handleAssistantSend = async () => {
+    const trimmed = assistantInput.trim();
+    if (!trimmed || assistantLoading) return;
+
+    const newMessages = [...assistantMessages, { role: 'user', content: trimmed }];
+    setAssistantMessages(newMessages);
+    setAssistantInput('');
+    setAssistantLoading(true);
+    setAssistantError(null);
+
+    try {
+      const response = await fetch('/api/pipette-assistant', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: newMessages.slice(-8) }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to reach PipettePal');
+      }
+
+      const data = await response.json();
+      const reply =
+        typeof data.reply === 'string'
+          ? data.reply
+          : 'I had trouble generating a response. Please try again.';
+
+      setAssistantMessages((prev) => [...prev, { role: 'assistant', content: reply }]);
+    } catch (error) {
+      setAssistantError('Unable to contact PipettePal right now. Try again soon.');
+    } finally {
+      setAssistantLoading(false);
+    }
+  };
+
+  const handleAssistantToggle = () => {
+    setAssistantOpen((prev) => !prev);
+    setAssistantError(null);
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 flex">
-      {/* Sidebar Toggle Button */}
-      <button
-        onClick={() => setSidebarOpen(!sidebarOpen)}
-        className="fixed top-4 left-4 z-50 bg-white border-2 border-slate-300 rounded-lg p-2 shadow-md hover:bg-slate-50 transition-colors"
-        aria-label="Toggle sidebar"
-      >
-        <svg
-          className="w-6 h-6 text-slate-700"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
+      {/* Sidebar Toggle Button - Only show when sidebar is closed */}
+      {!sidebarOpen && (
+        <button
+          onClick={() => setSidebarOpen(!sidebarOpen)}
+          className="fixed top-4 left-4 z-50 bg-white border-2 border-slate-300 rounded-lg p-2 shadow-md hover:bg-slate-50 transition-colors"
+          aria-label="Toggle sidebar"
         >
-          {sidebarOpen ? (
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          ) : (
+          <svg
+            className="w-6 h-6 text-slate-700"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-          )}
-        </svg>
-      </button>
+          </svg>
+        </button>
+      )}
 
       {/* Tutorial Button - Only show on simulator page */}
       {pathname === '/simulator' && (
-        <TutorialButton />
+        <>
+          <TutorialButton />
+          <StickyNotesToggleButton />
+        </>
       )}
 
       {/* Sidebar */}
@@ -235,6 +315,87 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
           {children}
         </div>
       </div>
+
+      {/* Floating Mascot */}
+      <button
+        onClick={handleAssistantToggle}
+        className="fixed bottom-4 right-4 z-40 rounded-full shadow-xl hover:scale-105 transition-transform focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+        aria-label="Open Pipette assistant"
+      >
+        <img
+          src="/mascot_floating.png"
+          alt="Pipette assistant mascot"
+          className="w-20 h-20 drop-shadow-lg pointer-events-none select-none"
+        />
+      </button>
+
+      {/* Assistant Chat Box */}
+      {assistantOpen && (
+        <div className="fixed bottom-4 right-28 w-80 bg-white border-2 border-slate-200 rounded-2xl shadow-2xl z-50 flex flex-col">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+            <div>
+              <p className="text-sm uppercase text-slate-500 font-semibold tracking-wide">PipettePal</p>
+              <p className="text-slate-900 font-semibold text-base">Your pipette buddy</p>
+            </div>
+            <button
+              onClick={handleAssistantToggle}
+              className="text-slate-400 hover:text-slate-600 transition-colors"
+              aria-label="Close assistant"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3 text-sm bg-slate-50">
+            {assistantMessages.map((message, idx) => (
+              <div
+                key={idx}
+                className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+              >
+                <div
+                  className={`max-w-[80%] rounded-2xl px-3 py-2 ${
+                    message.role === 'user'
+                      ? 'bg-slate-900 text-white'
+                      : 'bg-white text-slate-900 border border-slate-200'
+                  }`}
+                >
+                  {message.content}
+                </div>
+              </div>
+            ))}
+            {assistantError && (
+              <div className="text-xs text-red-500 bg-red-50 border border-red-200 rounded-lg px-2 py-1">
+                {assistantError}
+              </div>
+            )}
+          </div>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleAssistantSend();
+            }}
+            className="border-t border-slate-100 bg-white p-3"
+          >
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={assistantInput}
+                onChange={(e) => setAssistantInput(e.target.value)}
+                placeholder="Ask about pipettes..."
+            className="flex-1 px-3 py-2 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-300"
+              />
+              <button
+                type="submit"
+                disabled={assistantLoading}
+                className="px-3 py-2 rounded-xl bg-slate-900 text-white text-sm font-semibold disabled:bg-slate-400"
+              >
+                {assistantLoading ? '...' : 'Send'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 }

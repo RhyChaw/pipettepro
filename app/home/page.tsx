@@ -5,13 +5,19 @@ import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '../contexts/AuthContext';
+import { STICKY_NOTE_COLORS, StickyNote } from '../constants/stickyNotes';
 
 export default function HomePage() {
   const { user, userProfile, loading, updateUserProfile } = useAuth();
   const router = useRouter();
   const [completedSteps, setCompletedSteps] = useState<Set<number>>(new Set());
   const [showOnboardingModal, setShowOnboardingModal] = useState(false);
+  const [showMascotIntroduction, setShowMascotIntroduction] = useState(false);
   const [roadmapExpanded, setRoadmapExpanded] = useState(false);
+  const [showSimulationModal, setShowSimulationModal] = useState(false);
+  const [showExploreAppModal, setShowExploreAppModal] = useState(false);
+  const [mascotInCorner, setMascotInCorner] = useState(false);
+  const stickyNotes = (userProfile?.stickyNotes || []) as StickyNote[];
 
   useEffect(() => {
     if (!loading) {
@@ -37,9 +43,14 @@ export default function HomePage() {
     if (user?.email) {
       // First check Firebase for saved progress
       if (userProfile?.roadmapProgress) {
-        setCompletedSteps(new Set<number>(userProfile.roadmapProgress));
+        const completed = new Set<number>(userProfile.roadmapProgress);
+        setCompletedSteps(completed);
         // Sync to localStorage
         localStorage.setItem(`roadmap_${user.email}`, JSON.stringify(userProfile.roadmapProgress));
+        // Show mascot in corner if step 5 is completed
+        if (completed.has(5)) {
+          setMascotInCorner(true);
+        }
       } else {
         // Fallback to localStorage
         const stored = localStorage.getItem(`roadmap_${user.email}`);
@@ -47,6 +58,10 @@ export default function HomePage() {
           try {
             const completed = JSON.parse(stored) as number[];
             setCompletedSteps(new Set<number>(completed));
+            // Show mascot in corner if step 5 is completed
+            if (completed.includes(5)) {
+              setMascotInCorner(true);
+            }
           } catch (e) {
             console.error('Error parsing completed steps:', e);
           }
@@ -54,6 +69,29 @@ export default function HomePage() {
       }
     }
   }, [user, userProfile]);
+
+  // Check if all steps are completed and mark onboarding as done
+  useEffect(() => {
+    if (!user?.email || !userProfile) return;
+    
+    const allStepsDone = completedSteps.has(1) && 
+                        completedSteps.has(2) && 
+                        completedSteps.has(3) && 
+                        completedSteps.has(4) && 
+                        completedSteps.has(5);
+    
+    // Only mark onboarding as done if all steps are completed and it's not already marked
+    if (allStepsDone && !userProfile.onboardingCompleted) {
+      const currentLevel = userProfile.level || 0;
+      const newLevel = currentLevel + 1; // Level up on onboarding completion
+      updateUserProfile({
+        onboardingCompleted: true,
+        level: newLevel,
+      }).catch((error) => {
+        console.error('Error marking onboarding as completed:', error);
+      });
+    }
+  }, [completedSteps, user, userProfile, updateUserProfile]);
 
   // Check for step completion based on user activity
   useEffect(() => {
@@ -122,6 +160,18 @@ export default function HomePage() {
         </svg>
       ),
       primary: true,
+      isSimulation: true,
+    },
+    {
+      title: 'Scan Lab Manual',
+      description: 'Upload your lab manual and generate 3D simulation steps automatically',
+      href: '/your-docs',
+      icon: (
+        <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-6h6v6m2 4H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        </svg>
+      ),
+      primary: false,
     },
     {
       title: 'Take Quiz',
@@ -146,17 +196,6 @@ export default function HomePage() {
       primary: false,
     },
     {
-      title: 'Review Mistakes',
-      description: 'Analyze common pipetting errors and learn how to avoid them',
-      href: '/mistakes',
-      icon: (
-        <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-        </svg>
-      ),
-      primary: false,
-    },
-    {
       title: 'Challenge Mode',
       description: 'Complete timed challenges to improve your speed and accuracy',
       href: '/challenge',
@@ -168,12 +207,12 @@ export default function HomePage() {
       primary: false,
     },
     {
-      title: 'View Results',
-      description: 'Review your performance history and track your progress',
-      href: '/results',
+      title: 'Your Sticky Notes',
+      description: 'Review and organize notes captured during simulations',
+      href: '/sticky-notes',
       icon: (
         <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 13h6m-6 4h6m-9 4h12a2 2 0 002-2V7.414a2 2 0 00-.586-1.414L16.414 3.586A2 2 0 0015 3H5a2 2 0 00-2 2v16a2 2 0 002 2z" />
         </svg>
       ),
       primary: false,
@@ -207,38 +246,109 @@ export default function HomePage() {
           <div>
             <h2 className="text-xl font-semibold text-slate-900 mb-4">Explore the rest</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {mainActions.map((action, idx) => (
-                <Link
-                  key={idx}
-                  href={action.href}
-                  className={`group block p-6 rounded-lg border-2 transition-all duration-200 ${
-                    action.primary
-                      ? 'bg-slate-900 border-slate-900 text-white hover:bg-slate-800 hover:border-slate-800'
-                      : 'bg-white border-slate-200 text-slate-900 hover:border-slate-400 hover:shadow-md'
-                  }`}
-                >
-                  <div className={`mb-4 ${action.primary ? 'text-white' : 'text-slate-700'}`}>
-                    {action.icon}
-                  </div>
-                  <h3 className={`text-lg font-semibold mb-2 ${action.primary ? 'text-white' : 'text-slate-900'}`}>
-                    {action.title}
-                  </h3>
-                  <p className={`text-sm ${action.primary ? 'text-slate-300' : 'text-slate-600'}`}>
-                    {action.description}
-                  </p>
-                  <div className={`mt-4 text-sm font-medium flex items-center gap-2 ${
-                    action.primary ? 'text-white' : 'text-slate-700 group-hover:text-slate-900'
-                  }`}>
-                    <span>Get started</span>
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                    </svg>
-                  </div>
-                </Link>
-              ))}
+              {mainActions.map((action, idx) => {
+                if (action.isSimulation) {
+                  return (
+                    <button
+                      key={idx}
+                      onClick={() => setShowSimulationModal(true)}
+                      className={`group block p-6 rounded-lg border-2 transition-all duration-200 text-left w-full ${
+                        action.primary
+                          ? 'bg-slate-900 border-slate-900 text-white hover:bg-slate-800 hover:border-slate-800'
+                          : 'bg-white border-slate-200 text-slate-900 hover:border-slate-400 hover:shadow-md'
+                      }`}
+                    >
+                      <div className={`mb-4 ${action.primary ? 'text-white' : 'text-slate-700'}`}>
+                        {action.icon}
+                      </div>
+                      <h3 className={`text-lg font-semibold mb-2 ${action.primary ? 'text-white' : 'text-slate-900'}`}>
+                        {action.title}
+                      </h3>
+                      <p className={`text-sm ${action.primary ? 'text-slate-300' : 'text-slate-600'}`}>
+                        {action.description}
+                      </p>
+                      <div className={`mt-4 text-sm font-medium flex items-center gap-2 ${
+                        action.primary ? 'text-white' : 'text-slate-700 group-hover:text-slate-900'
+                      }`}>
+                        <span>Get started</span>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                      </div>
+                    </button>
+                  );
+                }
+                return (
+                  <Link
+                    key={idx}
+                    href={action.href}
+                    className={`group block p-6 rounded-lg border-2 transition-all duration-200 ${
+                      action.primary
+                        ? 'bg-slate-900 border-slate-900 text-white hover:bg-slate-800 hover:border-slate-800'
+                        : 'bg-white border-slate-200 text-slate-900 hover:border-slate-400 hover:shadow-md'
+                    }`}
+                  >
+                    <div className={`mb-4 ${action.primary ? 'text-white' : 'text-slate-700'}`}>
+                      {action.icon}
+                    </div>
+                    <h3 className={`text-lg font-semibold mb-2 ${action.primary ? 'text-white' : 'text-slate-900'}`}>
+                      {action.title}
+                    </h3>
+                    <p className={`text-sm ${action.primary ? 'text-slate-300' : 'text-slate-600'}`}>
+                      {action.description}
+                    </p>
+                    <div className={`mt-4 text-sm font-medium flex items-center gap-2 ${
+                      action.primary ? 'text-white' : 'text-slate-700 group-hover:text-slate-900'
+                    }`}>
+                      <span>Get started</span>
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
+                    </div>
+                  </Link>
+                );
+              })}
             </div>
           </div>
         )}
+
+        {/* Sticky Notes Wall Preview */}
+        <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <p className="text-sm uppercase tracking-wide text-slate-500 font-semibold">Your sticky notes</p>
+              <h3 className="text-2xl font-semibold text-slate-900">Pinned from simulations</h3>
+            </div>
+            <Link
+              href="/sticky-notes"
+              className="px-4 py-2 rounded-xl border border-slate-300 text-sm font-semibold text-slate-700 hover:border-slate-500 hover:text-slate-900 transition-colors"
+            >
+              Open wall
+            </Link>
+          </div>
+          {stickyNotes.length === 0 ? (
+            <div className="text-slate-500 text-sm bg-slate-50 border border-dashed border-slate-200 rounded-xl py-8 text-center">
+              You have not saved any sticky notes yet. Capture insights in the simulator to see them here.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {stickyNotes.slice(0, 4).map((note) => {
+                const palette = STICKY_NOTE_COLORS[note.color] || STICKY_NOTE_COLORS.yellow;
+                return (
+                  <div
+                    key={note.id}
+                    className={`rounded-xl border shadow-sm p-4 min-h-[140px] flex flex-col ${palette.bg} ${palette.text} ${palette.border}`}
+                  >
+                    <p className="text-sm flex-1 whitespace-pre-wrap break-words">{note.text}</p>
+                    <p className="text-xs mt-3 opacity-70">
+                      {new Date(note.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
 
         {/* Learning Roadmap */}
         <div className={`bg-white border border-slate-200 rounded-xl shadow-md transition-all duration-300 ${
@@ -279,12 +389,15 @@ export default function HomePage() {
             {[
               { id: 1, title: 'Onboarding', route: null },
               { id: 2, title: 'Know your tools', route: '/know-your-pipette', canSkip: userProfile?.canSkipKnowTools },
+              { id: 5, title: 'Explore the app', route: null },
               { id: 3, title: 'Understanding the simulation', route: '/simulator' },
               { id: 4, title: 'A basic quiz', route: '/quiz' },
-              { id: 5, title: 'Explore the app', route: null },
             ].map((step, index, array) => {
               const isLast = index === array.length - 1;
               const stepCompleted = completedSteps.has(step.id);
+              // Check if previous step is completed (disable if not)
+              const previousStepCompleted = index === 0 ? true : completedSteps.has(array[index - 1].id);
+              const isDisabled = !previousStepCompleted && !stepCompleted;
               
               return (
                 <div key={step.id} className="relative">
@@ -342,14 +455,21 @@ export default function HomePage() {
                           </button>
                         ) : (
                           <Link
-                            href={step.route}
+                            href={isDisabled ? '#' : step.route}
+                            onClick={(e) => {
+                              if (isDisabled) {
+                                e.preventDefault();
+                              }
+                            }}
                             className={`block p-4 rounded-lg border-2 transition-all duration-200 ${
                               stepCompleted
                                 ? 'bg-slate-50 border-slate-200 text-slate-500 cursor-default'
+                                : isDisabled
+                                ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed opacity-50'
                                 : 'bg-white border-slate-300 text-slate-900 hover:border-blue-500 hover:shadow-md cursor-pointer'
                             }`}
                           >
-                            <h3 className={`font-semibold text-lg ${stepCompleted ? 'text-slate-500' : 'text-slate-900'}`}>
+                            <h3 className={`font-semibold text-lg ${stepCompleted ? 'text-slate-500' : isDisabled ? 'text-slate-400' : 'text-slate-900'}`}>
                               {step.title}
                             </h3>
                           </Link>
@@ -357,17 +477,40 @@ export default function HomePage() {
                       ) : step.id === 1 ? (
                         <button
                           onClick={() => {
-                            if (!stepCompleted) {
+                            if (!stepCompleted && !isDisabled) {
                               setShowOnboardingModal(true);
                             }
                           }}
+                          disabled={isDisabled}
                           className={`block w-full text-left p-4 rounded-lg border-2 transition-all duration-200 ${
                             stepCompleted
                               ? 'bg-slate-50 border-slate-200 text-slate-500 cursor-default'
+                              : isDisabled
+                              ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed opacity-50'
                               : 'bg-white border-slate-300 text-slate-900 hover:border-blue-500 hover:shadow-md cursor-pointer'
                           }`}
                         >
-                          <h3 className={`font-semibold text-lg ${stepCompleted ? 'text-slate-500' : 'text-slate-900'}`}>
+                          <h3 className={`font-semibold text-lg ${stepCompleted ? 'text-slate-500' : isDisabled ? 'text-slate-400' : 'text-slate-900'}`}>
+                            {step.title}
+                          </h3>
+                        </button>
+                      ) : step.id === 5 ? (
+                        <button
+                          onClick={() => {
+                            if (!stepCompleted && !isDisabled) {
+                              setShowExploreAppModal(true);
+                            }
+                          }}
+                          disabled={isDisabled}
+                          className={`block w-full text-left p-4 rounded-lg border-2 transition-all duration-200 ${
+                            stepCompleted
+                              ? 'bg-slate-50 border-slate-200 text-slate-500 cursor-default'
+                              : isDisabled
+                              ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed opacity-50'
+                              : 'bg-white border-slate-300 text-slate-900 hover:border-blue-500 hover:shadow-md cursor-pointer'
+                          }`}
+                        >
+                          <h3 className={`font-semibold text-lg ${stepCompleted ? 'text-slate-500' : isDisabled ? 'text-slate-400' : 'text-slate-900'}`}>
                             {step.title}
                           </h3>
                         </button>
@@ -376,10 +519,12 @@ export default function HomePage() {
                           className={`p-4 rounded-lg border-2 ${
                             stepCompleted
                               ? 'bg-slate-50 border-slate-200 text-slate-500'
+                              : isDisabled
+                              ? 'bg-slate-100 border-slate-200 text-slate-400 opacity-50'
                               : 'bg-white border-slate-300 text-slate-900'
                           }`}
                         >
-                          <h3 className={`font-semibold text-lg ${stepCompleted ? 'text-slate-500' : 'text-slate-900'}`}>
+                          <h3 className={`font-semibold text-lg ${stepCompleted ? 'text-slate-500' : isDisabled ? 'text-slate-400' : 'text-slate-900'}`}>
                             {step.title}
                           </h3>
                         </div>
@@ -390,7 +535,7 @@ export default function HomePage() {
                   {/* Connecting Line */}
                   {!isLast && (
                     <div className={`absolute left-6 top-12 w-0.5 h-16 transition-all duration-500 ${
-                      stepCompleted ? 'bg-green-500' : 'bg-slate-300'
+                      stepCompleted && previousStepCompleted ? 'bg-green-500' : 'bg-slate-300'
                     }`} />
                   )}
                 </div>
@@ -421,35 +566,68 @@ export default function HomePage() {
           <div>
             <h2 className="text-xl font-semibold text-slate-900 mb-4">Explore the rest</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {mainActions.map((action, idx) => (
-                <Link
-                  key={idx}
-                  href={action.href}
-                  className={`group block p-6 rounded-lg border-2 transition-all duration-200 ${
-                    action.primary
-                      ? 'bg-slate-900 border-slate-900 text-white hover:bg-slate-800 hover:border-slate-800'
-                      : 'bg-white border-slate-200 text-slate-900 hover:border-slate-400 hover:shadow-md'
-                  }`}
-                >
-                  <div className={`mb-4 ${action.primary ? 'text-white' : 'text-slate-700'}`}>
-                    {action.icon}
-                  </div>
-                  <h3 className={`text-lg font-semibold mb-2 ${action.primary ? 'text-white' : 'text-slate-900'}`}>
-                    {action.title}
-                  </h3>
-                  <p className={`text-sm ${action.primary ? 'text-slate-300' : 'text-slate-600'}`}>
-                    {action.description}
-                  </p>
-                  <div className={`mt-4 text-sm font-medium flex items-center gap-2 ${
-                    action.primary ? 'text-white' : 'text-slate-700 group-hover:text-slate-900'
-                  }`}>
-                    <span>Get started</span>
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                    </svg>
-                  </div>
-                </Link>
-              ))}
+              {mainActions.map((action, idx) => {
+                if (action.isSimulation) {
+                  return (
+                    <button
+                      key={idx}
+                      onClick={() => setShowSimulationModal(true)}
+                      className={`group block p-6 rounded-lg border-2 transition-all duration-200 text-left w-full ${
+                        action.primary
+                          ? 'bg-slate-900 border-slate-900 text-white hover:bg-slate-800 hover:border-slate-800'
+                          : 'bg-white border-slate-200 text-slate-900 hover:border-slate-400 hover:shadow-md'
+                      }`}
+                    >
+                      <div className={`mb-4 ${action.primary ? 'text-white' : 'text-slate-700'}`}>
+                        {action.icon}
+                      </div>
+                      <h3 className={`text-lg font-semibold mb-2 ${action.primary ? 'text-white' : 'text-slate-900'}`}>
+                        {action.title}
+                      </h3>
+                      <p className={`text-sm ${action.primary ? 'text-slate-300' : 'text-slate-600'}`}>
+                        {action.description}
+                      </p>
+                      <div className={`mt-4 text-sm font-medium flex items-center gap-2 ${
+                        action.primary ? 'text-white' : 'text-slate-700 group-hover:text-slate-900'
+                      }`}>
+                        <span>Get started</span>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                      </div>
+                    </button>
+                  );
+                }
+                return (
+                  <Link
+                    key={idx}
+                    href={action.href}
+                    className={`group block p-6 rounded-lg border-2 transition-all duration-200 ${
+                      action.primary
+                        ? 'bg-slate-900 border-slate-900 text-white hover:bg-slate-800 hover:border-slate-800'
+                        : 'bg-white border-slate-200 text-slate-900 hover:border-slate-400 hover:shadow-md'
+                    }`}
+                  >
+                    <div className={`mb-4 ${action.primary ? 'text-white' : 'text-slate-700'}`}>
+                      {action.icon}
+                    </div>
+                    <h3 className={`text-lg font-semibold mb-2 ${action.primary ? 'text-white' : 'text-slate-900'}`}>
+                      {action.title}
+                    </h3>
+                    <p className={`text-sm ${action.primary ? 'text-slate-300' : 'text-slate-600'}`}>
+                      {action.description}
+                    </p>
+                    <div className={`mt-4 text-sm font-medium flex items-center gap-2 ${
+                      action.primary ? 'text-white' : 'text-slate-700 group-hover:text-slate-900'
+                    }`}>
+                      <span>Get started</span>
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
+                    </div>
+                  </Link>
+                );
+              })}
             </div>
           </div>
         )}
@@ -457,7 +635,7 @@ export default function HomePage() {
       </div>
 
       {/* Onboarding Modal */}
-      {showOnboardingModal && (
+      {showOnboardingModal && !showMascotIntroduction && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
           <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8 relative animate-scale-in border-4 border-blue-200">
             {/* Close button */}
@@ -492,7 +670,7 @@ export default function HomePage() {
               <div className="relative bg-gradient-to-r from-blue-50 to-purple-50 rounded-2xl p-6 border-2 border-blue-200 shadow-lg animate-slide-up">
                 <div className="absolute -bottom-4 left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-8 border-r-8 border-t-8 border-transparent border-t-blue-50"></div>
                 <p className="text-slate-800 font-semibold text-lg text-center mb-2">
-                  Hi there! 👋
+                  Hi there!
                 </p>
                 <p className="text-slate-700 text-center">
                   Start onboarding process?
@@ -503,31 +681,12 @@ export default function HomePage() {
             {/* Action Buttons */}
             <div className="flex gap-4">
               <button
-                onClick={async () => {
-                  if (!user?.email) return;
-                  
-                            // Mark onboarding as completed
-                            const stored = localStorage.getItem(`roadmap_${user.email}`);
-                            const completed = stored ? new Set<number>(JSON.parse(stored) as number[]) : new Set<number>();
-                            completed.add(1);
-                            const completedArray = Array.from(completed) as number[];
-                            localStorage.setItem(`roadmap_${user.email}`, JSON.stringify(completedArray));
-                            
-                            // Save to Firebase
-                            try {
-                              await updateUserProfile({
-                                onboardingCompleted: true,
-                                roadmapProgress: completedArray,
-                              });
-                    setCompletedSteps(completed);
-                    setShowOnboardingModal(false);
-                  } catch (error) {
-                    console.error('Error saving onboarding progress:', error);
-                  }
+                onClick={() => {
+                  setShowMascotIntroduction(true);
                 }}
                 className="flex-1 bg-gradient-to-r from-blue-600 to-purple-600 text-white font-bold py-4 px-6 rounded-xl hover:from-blue-700 hover:to-purple-700 transform hover:scale-105 transition-all duration-200 shadow-lg hover:shadow-xl animate-pulse-slow"
               >
-                Yes! Let's go! 🚀
+                Yes! Let's go!
               </button>
               <button
                 onClick={() => setShowOnboardingModal(false)}
@@ -537,6 +696,231 @@ export default function HomePage() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Mascot Introduction Modal */}
+      {showMascotIntroduction && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8 relative animate-scale-in border-4 border-blue-200">
+            {/* Mascot and Speech Bubble */}
+            <div className="flex flex-col items-center mb-6">
+              {/* Mascot */}
+              <div className="relative mb-4 animate-bounce-slow">
+                <img
+                  src="/mascot.png"
+                  alt="PipettePro Mascot"
+                  className="w-32 h-32 drop-shadow-lg"
+                />
+                {/* Sparkle effect */}
+                <div className="absolute -top-2 -right-2 w-6 h-6 animate-pulse">
+                  <svg className="w-full h-full text-yellow-400" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                  </svg>
+                </div>
+              </div>
+
+              {/* Speech Bubble */}
+              <div className="relative bg-gradient-to-r from-blue-50 to-purple-50 rounded-2xl p-6 border-2 border-blue-200 shadow-lg animate-slide-up">
+                <div className="absolute -bottom-4 left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-8 border-r-8 border-t-8 border-transparent border-t-blue-50"></div>
+                <p className="text-slate-800 font-semibold text-lg text-center mb-3">
+                  Welcome to PipettePro!
+                </p>
+                <p className="text-slate-700 text-center leading-relaxed">
+                  I'm here to guide you through pipetting step by step. Together, we'll master the art of precise liquid handling!
+                </p>
+              </div>
+            </div>
+
+            {/* Action Button */}
+            <div className="flex justify-center">
+              <button
+                onClick={async () => {
+                  if (!user?.email) return;
+                  
+                  // Mark onboarding as completed
+                  const stored = localStorage.getItem(`roadmap_${user.email}`);
+                  const completed = stored ? new Set<number>(JSON.parse(stored) as number[]) : new Set<number>();
+                  completed.add(1);
+                  const completedArray = Array.from(completed) as number[];
+                  localStorage.setItem(`roadmap_${user.email}`, JSON.stringify(completedArray));
+                  
+                  // Save to Firebase - Only mark step 1 as done, not onboarding
+                  try {
+                    await updateUserProfile({
+                      roadmapProgress: completedArray,
+                    });
+                    setCompletedSteps(completed);
+                    setShowMascotIntroduction(false);
+                    setShowOnboardingModal(false);
+                  } catch (error) {
+                    console.error('Error saving roadmap progress:', error);
+                  }
+                }}
+                className="w-full bg-gradient-to-r from-blue-600 to-purple-600 text-white font-bold py-4 px-6 rounded-xl hover:from-blue-700 hover:to-purple-700 transform hover:scale-105 transition-all duration-200 shadow-lg hover:shadow-xl"
+              >
+                Let's begin!
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Simulation Modal */}
+      {showSimulationModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8 relative animate-scale-in border-4 border-blue-200">
+            {/* Close button */}
+            <button
+              onClick={() => setShowSimulationModal(false)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 transition-colors"
+              aria-label="Close"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+
+            <div className="mb-6">
+              <h3 className="text-2xl font-bold text-slate-900 mb-4 text-center">Choose Simulation Mode</h3>
+              <p className="text-slate-600 text-center mb-6">How would you like to practice?</p>
+            </div>
+
+            <div className="space-y-4">
+              <Link
+                href="/simulator"
+                onClick={() => setShowSimulationModal(false)}
+                className="block w-full bg-gradient-to-r from-blue-600 to-purple-600 text-white font-bold py-4 px-6 rounded-xl hover:from-blue-700 hover:to-purple-700 transform hover:scale-105 transition-all duration-200 shadow-lg hover:shadow-xl text-center"
+              >
+                Free Simulation
+              </Link>
+              <button
+                onClick={() => {
+                  setShowSimulationModal(false);
+                  router.push('/quiz');
+                }}
+                className="w-full bg-slate-200 text-slate-700 font-semibold py-4 px-6 rounded-xl hover:bg-slate-300 transform hover:scale-105 transition-all duration-200"
+              >
+                Practice a Particular Question
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Explore the App Modal */}
+      {showExploreAppModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8 relative animate-scale-in border-4 border-blue-200">
+            {/* Mascot and Speech Bubble */}
+            <div className="flex flex-col items-center mb-6">
+              {/* Mascot */}
+              <div className="relative mb-4 animate-bounce-slow" id="explore-mascot-container">
+                <img
+                  src="/mascot.png"
+                  alt="PipettePro Mascot"
+                  id="explore-mascot-img"
+                  className="w-32 h-32 drop-shadow-lg transition-all duration-500"
+                />
+                {/* Sparkle effect */}
+                <div className="absolute -top-2 -right-2 w-6 h-6 animate-pulse">
+                  <svg className="w-full h-full text-yellow-400" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                  </svg>
+                </div>
+              </div>
+
+              {/* Speech Bubble */}
+              <div className="relative bg-gradient-to-r from-blue-50 to-purple-50 rounded-2xl p-6 border-2 border-blue-200 shadow-lg animate-slide-up">
+                <div className="absolute -bottom-4 left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-8 border-r-8 border-t-8 border-transparent border-t-blue-50"></div>
+                <p className="text-slate-800 font-semibold text-lg text-center leading-relaxed">
+                  Great to see you are excited to become the next pipette pro! I will rest in the side till you need me again :) Explore this app and have fun!
+                </p>
+              </div>
+            </div>
+
+            {/* Action Button */}
+            <div className="flex justify-center">
+              <button
+                onClick={async () => {
+                  if (!user?.email) return;
+                  
+                  // Animate mascot image change and movement
+                  const mascotImg = document.getElementById('explore-mascot-img');
+                  const mascotContainer = document.getElementById('explore-mascot-container');
+                  
+                  if (mascotImg && mascotContainer) {
+                    // Change image to floating version
+                    mascotImg.src = '/mascot_floating.png';
+                    
+                    // Animate movement to bottom right
+                    mascotContainer.style.transition = 'all 1s ease-in-out';
+                    mascotContainer.style.position = 'fixed';
+                    mascotContainer.style.bottom = '16px';
+                    mascotContainer.style.right = '16px';
+                    mascotContainer.style.zIndex = '40';
+                    mascotContainer.style.transform = 'scale(0.75)';
+                  }
+                  
+                  // Mark step 5 as completed
+                  const stored = localStorage.getItem(`roadmap_${user.email}`);
+                  const completed = stored ? new Set<number>(JSON.parse(stored) as number[]) : new Set<number>();
+                  completed.add(5);
+                  const completedArray = Array.from(completed) as number[];
+                  localStorage.setItem(`roadmap_${user.email}`, JSON.stringify(completedArray));
+                  
+                  // Save to Firebase
+                  try {
+                    await updateUserProfile({
+                      roadmapProgress: completedArray,
+                    });
+                    setCompletedSteps(completed);
+                    
+                    // Check if all 5 steps are now completed
+                    const allStepsDone = completed.has(1) && 
+                                       completed.has(2) && 
+                                       completed.has(3) && 
+                                       completed.has(4) && 
+                                       completed.has(5);
+                    
+                    // If all steps are done, mark onboarding as completed and level up
+                    if (allStepsDone) {
+                      const currentLevel = userProfile?.level || 0;
+                      const newLevel = currentLevel + 1; // Level up on onboarding completion
+                      await updateUserProfile({
+                        onboardingCompleted: true,
+                        level: newLevel,
+                      });
+                    }
+                    
+                    // Close modal after animation
+                    setTimeout(() => {
+                      setShowExploreAppModal(false);
+                      setMascotInCorner(true);
+                    }, 1000);
+                  } catch (error) {
+                    console.error('Error saving roadmap progress:', error);
+                    setShowExploreAppModal(false);
+                    setMascotInCorner(true);
+                  }
+                }}
+                className="w-full bg-gradient-to-r from-blue-600 to-purple-600 text-white font-bold py-4 px-6 rounded-xl hover:from-blue-700 hover:to-purple-700 transform hover:scale-105 transition-all duration-200 shadow-lg hover:shadow-xl"
+              >
+                Got it!
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Mascot in Bottom Right Corner */}
+      {mascotInCorner && (
+        <div className="fixed bottom-4 right-4 z-40 animate-slide-in-right">
+          <img
+            src="/mascot_floating.png"
+            alt="PipettePro Mascot"
+            className="w-24 h-24 drop-shadow-2xl"
+          />
         </div>
       )}
     </DashboardLayout>

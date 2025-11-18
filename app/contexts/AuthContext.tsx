@@ -10,6 +10,15 @@ import {
 } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, db } from '../utils/firebaseConfig';
+import { StickyNote } from '../constants/stickyNotes';
+
+interface QuizProgress {
+  category: string;
+  difficulty: string;
+  correct: number;
+  incorrect: number;
+  completed: boolean;
+}
 
 interface UserProfile {
   email: string;
@@ -17,11 +26,13 @@ interface UserProfile {
   'pipette experience': string;
   profileComplete?: boolean;
   profilePictureUrl?: string;
-  highestLevel?: number;
+  level?: number;
   onboardingCompleted?: boolean;
   roadmapProgress?: number[];
   canSkipKnowTools?: boolean;
   gotSimulationTutorial?: boolean;
+  quizProgress?: QuizProgress[];
+  stickyNotes?: StickyNote[];
 }
 
 interface AuthContextType {
@@ -71,6 +82,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       name: '',
       'pipette experience': '',
       profileComplete: false,
+      level: 0,
+      quizProgress: [],
+      stickyNotes: [],
     });
   };
 

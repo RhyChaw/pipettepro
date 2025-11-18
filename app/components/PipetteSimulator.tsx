@@ -1,11 +1,12 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import TutorialOverlay from './TutorialOverlay';
 import { useAuth } from '../contexts/AuthContext';
+import { STICKY_NOTE_COLORS, StickyNote, StickyNoteColor } from '../constants/stickyNotes';
 
 interface Pipette {
   id: string;
@@ -114,6 +115,7 @@ const quizQuestions = [
 
 export default function PipetteSimulator() {
   const { userProfile, updateUserProfile } = useAuth();
+  const router = useRouter();
   const labContainerRef = useRef<HTMLDivElement>(null);
   const [activeTab, setActiveTab] = useState<'pipetting' | 'quiz'>('pipetting');
   const [selectedPipetteId, setSelectedPipetteId] = useState<string | null>(null);
@@ -145,6 +147,13 @@ export default function PipetteSimulator() {
   // Only show tutorial if user hasn't completed it yet
   const [showTutorial, setShowTutorial] = useState(false);
   const [feedbackConsole, setFeedbackConsole] = useState<string>('');
+  const [showStickyNotesModal, setShowStickyNotesModal] = useState(false);
+  const [stickyNotes, setStickyNotes] = useState<StickyNote[]>(userProfile?.stickyNotes || []);
+  const [noteColor, setNoteColor] = useState<StickyNoteColor>('yellow');
+  const [noteContent, setNoteContent] = useState('');
+  const [noteSaving, setNoteSaving] = useState(false);
+  const [noteError, setNoteError] = useState<string | null>(null);
+  const [showPipettePalette, setShowPipettePalette] = useState(false);
 
   // Listen for tutorial button click from DashboardLayout
   useEffect(() => {
@@ -154,6 +163,16 @@ export default function PipetteSimulator() {
     window.addEventListener('showTutorial', handleShowTutorial);
     return () => window.removeEventListener('showTutorial', handleShowTutorial);
   }, []);
+
+  useEffect(() => {
+    const handleToggleStickyNotes = () => setShowStickyNotesModal(true);
+    window.addEventListener('toggleStickyNotes', handleToggleStickyNotes);
+    return () => window.removeEventListener('toggleStickyNotes', handleToggleStickyNotes);
+  }, []);
+
+  useEffect(() => {
+    setStickyNotes(userProfile?.stickyNotes || []);
+  }, [userProfile?.stickyNotes]);
 
   // Sync slider with pipetteY value when scene is ready
   useEffect(() => {
@@ -240,6 +259,22 @@ export default function PipetteSimulator() {
     directionalLight.position.set(5, 10, 7.5);
     directionalLight.castShadow = true;
     scene.add(directionalLight);
+    
+    // Top-down lighting towards the table
+    const topLight = new THREE.DirectionalLight(0xffffff, 1.0);
+    topLight.position.set(0, 15, 0); // Directly above the table
+    topLight.target.position.set(0, 0, 0); // Pointing towards the table center
+    topLight.castShadow = true;
+    topLight.shadow.mapSize.width = 2048;
+    topLight.shadow.mapSize.height = 2048;
+    topLight.shadow.camera.near = 0.5;
+    topLight.shadow.camera.far = 20;
+    topLight.shadow.camera.left = -10;
+    topLight.shadow.camera.right = 10;
+    topLight.shadow.camera.top = 10;
+    topLight.shadow.camera.bottom = -10;
+    scene.add(topLight);
+    scene.add(topLight.target);
 
     // Load chemistry lab table GLB model
     const loader = new GLTFLoader();
@@ -306,11 +341,6 @@ export default function PipetteSimulator() {
         });
         
         scene.add(labTable);
-        
-        // Add grid helper to visualize coordinate system on table surface
-        const gridHelper = new THREE.GridHelper(40, 40, 0x666666, 0x999999);
-        gridHelper.position.y = tableTopY + 0.001; // Slightly above table surface to avoid z-fighting
-        scene.add(gridHelper);
       },
       undefined,
       (error) => {
@@ -373,31 +403,6 @@ export default function PipetteSimulator() {
             const liquidMesh = new THREE.Mesh(liquidGeo, liquidMat);
             liquidMesh.position.y = liquidHeight / 2;
             group.add(liquidMesh);
-            
-            // Create 3D text label above beaker
-            const createTextSprite = (text: string) => {
-              const canvas = document.createElement('canvas');
-              const context = canvas.getContext('2d')!;
-              canvas.width = 256;
-              canvas.height = 64;
-              context.fillStyle = 'rgba(255, 255, 255, 0.9)';
-              context.fillRect(0, 0, canvas.width, canvas.height);
-              context.fillStyle = '#1e293b';
-              context.font = 'bold 24px Arial';
-              context.textAlign = 'center';
-              context.textBaseline = 'middle';
-              context.fillText(text, canvas.width / 2, canvas.height / 2);
-              const texture = new THREE.CanvasTexture(canvas);
-              const spriteMaterial = new THREE.SpriteMaterial({ map: texture, transparent: true });
-              const sprite = new THREE.Sprite(spriteMaterial);
-              sprite.scale.set(1, 0.25, 1);
-              sprite.position.y = size.y * scale + 0.5; // 0.5 units above beaker
-              return sprite;
-            };
-            
-            const labelText = adjustedX < 0 ? 'Destination Beaker' : 'Source Beaker';
-            const labelSprite = createTextSprite(labelText);
-            group.add(labelSprite);
             
             const totalVolume = Math.PI * Math.pow(liquidRadius, 2) * liquidHeight;
             const currentVolume = totalVolume * initialLiquidRatio;
@@ -572,30 +577,6 @@ export default function PipetteSimulator() {
         
         // Ensure z position is correct (should be 3.0 - middle but backwards)
         binGroup.position.z = 0.5 + 2.5; // Same as calculated earlier
-        
-        // Create 3D text label above waste bin
-        const createTextSprite = (text: string) => {
-          const canvas = document.createElement('canvas');
-          const context = canvas.getContext('2d')!;
-          canvas.width = 256;
-          canvas.height = 64;
-          context.fillStyle = 'rgba(255, 255, 255, 0.9)';
-          context.fillRect(0, 0, canvas.width, canvas.height);
-          context.fillStyle = '#1e293b';
-          context.font = 'bold 24px Arial';
-          context.textAlign = 'center';
-          context.textBaseline = 'middle';
-          context.fillText(text, canvas.width / 2, canvas.height / 2);
-          const texture = new THREE.CanvasTexture(canvas);
-          const spriteMaterial = new THREE.SpriteMaterial({ map: texture, transparent: true });
-          const sprite = new THREE.Sprite(spriteMaterial);
-          sprite.scale.set(1, 0.25, 1);
-          sprite.position.y = binSize.y + 0.5; // 0.5 units above bin
-          return sprite;
-        };
-        
-        const labelSprite = createTextSprite('Waste Bin');
-        binGroup.add(labelSprite);
       },
       undefined,
       (error) => {
@@ -821,10 +802,40 @@ export default function PipetteSimulator() {
     return () => {
       window.removeEventListener('resize', handleResize);
       cancelAnimationFrame(animationId);
-      if (labContainer && renderer.domElement.parentNode) {
-        renderer.domElement.parentNode.removeChild(renderer.domElement);
+      
+      // Dispose of Three.js resources
+      if (sceneRef.current) {
+        const { scene, renderer } = sceneRef.current;
+        
+        // Dispose of geometries, materials, and textures
+        scene.traverse((object) => {
+          if (object instanceof THREE.Mesh) {
+            if (object.geometry) object.geometry.dispose();
+            if (object.material) {
+              if (Array.isArray(object.material)) {
+                object.material.forEach((mat) => {
+                  if (mat.map) mat.map.dispose();
+                  mat.dispose();
+                });
+              } else {
+                if (object.material.map) object.material.map.dispose();
+                object.material.dispose();
+              }
+            }
+          }
+        });
+        
+        // Remove renderer from DOM
+        if (labContainer && renderer.domElement.parentNode) {
+          renderer.domElement.parentNode.removeChild(renderer.domElement);
+        }
+        
+        // Dispose renderer
+        renderer.dispose();
+        
+        // Clear scene reference
+        sceneRef.current = null;
       }
-      renderer.dispose();
     };
   }, []);
 
@@ -1427,6 +1438,37 @@ export default function PipetteSimulator() {
     startQuiz(quizData.incorrectQuestions);
   };
 
+  const saveStickyNotes = async (updatedNotes: StickyNote[]) => {
+    try {
+      setNoteSaving(true);
+      await updateUserProfile({ stickyNotes: updatedNotes });
+      setStickyNotes(updatedNotes);
+      setNoteContent('');
+      setNoteError(null);
+    } catch (error) {
+      console.error('Error saving sticky notes:', error);
+      setNoteError('Unable to save note. Please try again.');
+    } finally {
+      setNoteSaving(false);
+    }
+  };
+
+  const handleAddStickyNote = async () => {
+    const text = noteContent.trim();
+    if (!text) return;
+    const newNote: StickyNote = {
+      id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(),
+      text: text.slice(0, 250),
+      color: noteColor,
+      createdAt: new Date().toISOString(),
+    };
+    await saveStickyNotes([newNote, ...stickyNotes]);
+  };
+
+  const handleDeleteStickyNote = async (id: string) => {
+    await saveStickyNotes(stickyNotes.filter((note) => note.id !== id));
+  };
+
   const handleTutorialComplete = async () => {
     setShowTutorial(false);
     // Mark tutorial as completed in user profile
@@ -1462,15 +1504,21 @@ export default function PipetteSimulator() {
       )}
 
       {/* Back Button - Top Left */}
-      <Link
-        href="/home"
+      <button
+        onClick={() => {
+          // Clear scene reference before navigation
+          if (sceneRef.current) {
+            sceneRef.current = null;
+          }
+          router.push('/home');
+        }}
         className="absolute top-4 left-4 z-30 bg-white rounded-lg px-4 py-2 border-2 border-slate-300 shadow-lg hover:bg-slate-50 transition-colors flex items-center gap-2"
       >
         <svg className="w-5 h-5 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
         </svg>
         <span className="text-slate-700 font-semibold">Back to Home</span>
-      </Link>
+      </button>
 
       {/* Main Simulation Area */}
       <div
@@ -1482,22 +1530,6 @@ export default function PipetteSimulator() {
           background: '#ffffff',
         }}
       >
-        {/* Beaker Labels - 3D HTML labels */}
-        <div className="absolute bottom-32 left-1/4 z-20">
-          <div className="bg-white/95 backdrop-blur-xl rounded-lg px-4 py-2 border-2 border-blue-400 shadow-lg">
-            <p className="text-sm font-semibold text-slate-900">Source Beaker</p>
-          </div>
-        </div>
-        <div className="absolute bottom-32 right-1/4 z-20">
-          <div className="bg-white/95 backdrop-blur-xl rounded-lg px-4 py-2 border-2 border-blue-400 shadow-lg">
-            <p className="text-sm font-semibold text-slate-900">Destination Beaker</p>
-          </div>
-        </div>
-        <div className="absolute bottom-32 left-1/2 transform -translate-x-1/2 z-20">
-          <div className="bg-white/95 backdrop-blur-xl rounded-lg px-4 py-2 border-2 border-red-400 shadow-lg">
-            <p className="text-sm font-semibold text-slate-900">Waste Bin</p>
-          </div>
-        </div>
         {/* Confetti and effects will be here */}
 
         {/* Confetti Effect */}
@@ -1549,6 +1581,29 @@ export default function PipetteSimulator() {
             <div className="bg-white rounded-xl p-4 border-2 border-slate-300 shadow-lg">
               <h3 className="text-sm font-semibold text-slate-700 mb-2">Current Task:</h3>
               <p className="text-base text-slate-900 font-medium">{currentTask}</p>
+            </div>
+          </div>
+
+          <div className="shrink-0 mb-4 flex justify-end">
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowPipettePalette(true)}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-300 bg-white text-sm font-semibold text-slate-700 hover:border-slate-500 hover:text-slate-900 transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-7 7-4-4-4 4 8 8 10-10L19 7z" />
+                </svg>
+                Pipette colors
+              </button>
+              <button
+                onClick={() => setShowStickyNotesModal(true)}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-300 bg-white text-sm font-semibold text-slate-700 hover:border-slate-500 hover:text-slate-900 transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-9 4h7m2 4H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                Sticky notes
+              </button>
             </div>
           </div>
 
@@ -2147,6 +2202,156 @@ export default function PipetteSimulator() {
                   </button>
                 );
               })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Sticky Notes Modal */}
+      {showStickyNotesModal && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4">
+          <div className="bg-white w-full max-w-4xl rounded-3xl border-4 border-slate-200 shadow-2xl relative">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+              <div>
+                <p className="text-sm uppercase tracking-wide text-slate-500 font-semibold">Sticky notes</p>
+                <h3 className="text-2xl font-semibold text-slate-900">Pin simulation insights</h3>
+              </div>
+              <button
+                onClick={() => setShowStickyNotesModal(false)}
+                className="text-slate-400 hover:text-slate-600 transition-colors"
+                aria-label="Close sticky notes"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="p-6 space-y-5">
+              <div className="flex flex-col lg:flex-row gap-4">
+                <div className="flex-1 space-y-3">
+                  <label className="text-sm font-semibold text-slate-700">Pick a color</label>
+                  <div className="flex gap-3">
+                    {Object.entries(STICKY_NOTE_COLORS).map(([key, palette]) => (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => setNoteColor(key as StickyNoteColor)}
+                        className={`w-10 h-10 rounded-full border-2 transition-transform ${
+                          noteColor === key ? 'ring-2 ring-slate-900 scale-105' : ''
+                        } ${palette.bg} ${palette.border}`}
+                        aria-label={palette.label}
+                      />
+                    ))}
+                  </div>
+                </div>
+                <div className="flex-2 space-y-2">
+                  <label htmlFor="sticky-note-content" className="text-sm font-semibold text-slate-700">
+                    Write a note
+                  </label>
+                  <textarea
+                    id="sticky-note-content"
+                    value={noteContent}
+                    onChange={(e) => setNoteContent(e.target.value)}
+                    maxLength={250}
+                    rows={3}
+                    className="w-full rounded-2xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-300"
+                    placeholder="Example: Pre-wet tips twice before aspirating viscous buffers."
+                  />
+                  <div className="flex items-center justify-between text-xs text-slate-500">
+                    <span>{noteContent.length}/250</span>
+                    {noteError && <span className="text-red-500">{noteError}</span>}
+                  </div>
+                  <div className="flex justify-end">
+                    <button
+                      onClick={handleAddStickyNote}
+                      disabled={!noteContent.trim() || noteSaving}
+                      className="px-4 py-2 rounded-xl bg-slate-900 text-white font-semibold disabled:bg-slate-400"
+                    >
+                      {noteSaving ? 'Saving...' : 'Pin note'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 max-h-[420px] overflow-y-auto pr-1">
+                {stickyNotes.length === 0 ? (
+                  <div className="col-span-full text-center text-slate-500 text-sm py-10 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                    No sticky notes yet. Add your first insight to remember pro moves.
+                  </div>
+                ) : (
+                  stickyNotes.map((note) => {
+                    const palette = STICKY_NOTE_COLORS[note.color] || STICKY_NOTE_COLORS.yellow;
+                    return (
+                      <div
+                        key={note.id}
+                        className={`rounded-2xl border shadow-sm p-4 min-h-[150px] flex flex-col ${palette.bg} ${palette.text} ${palette.border}`}
+                      >
+                        <p className="text-sm flex-1 whitespace-pre-wrap wrap-break-word">{note.text}</p>
+                        <div className="mt-3 flex items-center justify-between text-xs opacity-75">
+                          <span>{new Date(note.createdAt).toLocaleString()}</span>
+                          <button onClick={() => handleDeleteStickyNote(note.id)} className="font-semibold underline">
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Pipette Palette Modal */}
+      {showPipettePalette && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4">
+          <div className="bg-white w-full max-w-3xl rounded-3xl border-4 border-slate-200 shadow-2xl relative">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+              <div>
+                <p className="text-sm uppercase tracking-wide text-slate-500 font-semibold">Select pipette</p>
+                <h3 className="text-2xl font-semibold text-slate-900">Color-coded pipette families</h3>
+                <p className="text-sm text-slate-600">
+                  Choose the pipette that matches your target volume. Tip color updates instantly.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowPipettePalette(false)}
+                className="text-slate-400 hover:text-slate-600 transition-colors"
+                aria-label="Close pipette palette"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {pipettes.map((pipette) => (
+                <button
+                  key={pipette.id}
+                  onClick={() => {
+                    selectPipette(pipette);
+                    setShowPipettePalette(false);
+                  }}
+                  className={`flex items-center gap-4 rounded-2xl border-2 p-4 text-left transition-all ${
+                    selectedPipetteId === pipette.id
+                      ? 'border-slate-900 shadow-lg'
+                      : 'border-slate-200 hover:border-slate-400 hover:shadow-md'
+                  }`}
+                >
+                  <div
+                    className="w-16 h-16 rounded-2xl border-2 shadow-inner"
+                    style={{ backgroundColor: `#${pipette.color.toString(16).padStart(6, '0')}` }}
+                  />
+                  <div>
+                    <p className="text-xl font-semibold text-slate-900">{pipette.name}</p>
+                    <p className="text-sm text-slate-600">{pipette.min} - {pipette.max} µL</p>
+                    <p className="text-xs text-slate-500 mt-1">Tap to equip. Tip will glow in this color.</p>
+                  </div>
+                </button>
+              ))}
             </div>
           </div>
         </div>

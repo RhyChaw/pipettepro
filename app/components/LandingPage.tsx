@@ -4,43 +4,25 @@ import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 
 export default function LandingPage() {
   const heroRef = useRef<HTMLDivElement>(null);
-  const { user, loading } = useAuth();
+  const pipetteRef = useRef<HTMLDivElement>(null);
+  const physicsSectionRef = useRef<HTMLDivElement>(null);
+  const ballRef = useRef<HTMLDivElement>(null);
+  const { user } = useAuth();
   const router = useRouter();
-  const [particlePositions, setParticlePositions] = useState<Array<{
-    left: number;
-    top: number;
-    delay: number;
-    duration: number;
-  }>>([]);
-  const [smallParticlePositions, setSmallParticlePositions] = useState<Array<{
-    left: number;
-    top: number;
-    delay: number;
-    duration: number;
-  }>>([]);
-
-  useEffect(() => {
-    // Generate random particle positions only on client side
-    setParticlePositions(
-      Array.from({ length: 20 }, () => ({
-        left: Math.random() * 100,
-        top: Math.random() * 100,
-        delay: Math.random() * 5,
-        duration: 3 + Math.random() * 4,
-      }))
-    );
-    setSmallParticlePositions(
-      Array.from({ length: 15 }, () => ({
-        left: Math.random() * 100,
-        top: Math.random() * 100,
-        delay: Math.random() * 5,
-        duration: 4 + Math.random() * 3,
-      }))
-    );
-  }, []);
+  const [showBall, setShowBall] = useState(false);
+  const [dropStartScroll, setDropStartScroll] = useState<number | null>(null);
+  const [dropStartPosition, setDropStartPosition] = useState<{ top: number; left: number }>({
+    top: 140,
+    left: 0,
+  });
+  const [ballPosition, setBallPosition] = useState({ top: 0, left: 0 });
+  const [hasExploded, setHasExploded] = useState(false);
+  const [showPurpleBackground, setShowPurpleBackground] = useState(false);
+  const [purpleReveal, setPurpleReveal] = useState({ active: false, x: 0, y: 0 });
 
   useEffect(() => {
     // Add scroll-based animations
@@ -65,160 +47,284 @@ export default function LandingPage() {
     };
   }, []);
 
+  useEffect(() => {
+    let scrollTimeout: NodeJS.Timeout;
+    let animationFrameId: number;
+
+    const handleScroll = () => {
+      const scrollY = window.scrollY;
+      const windowHeight = window.innerHeight;
+      const heroHeight = heroRef.current?.offsetHeight || windowHeight;
+      const releaseThreshold = Math.max(60, heroHeight * 0.35);
+
+      if (!showBall && scrollY > releaseThreshold) {
+        if (pipetteRef.current) {
+          const rect = pipetteRef.current.getBoundingClientRect();
+          const tipY = rect.top + rect.height * 0.85;
+          const tipX = rect.left + rect.width * 0.45;
+          setDropStartPosition({ top: tipY, left: tipX });
+        }
+        setShowBall(true);
+        if (dropStartScroll === null) {
+          setDropStartScroll(scrollY);
+        }
+      } else if (showBall && dropStartScroll === null) {
+        setDropStartScroll(scrollY);
+      }
+
+      if (showBall && !hasExploded && physicsSectionRef.current) {
+        const physicsSection = physicsSectionRef.current;
+        const physicsRect = physicsSection.getBoundingClientRect();
+        const physicsTopDoc = physicsRect.top + scrollY;
+
+        // Calculate ball position (right side, following scroll)
+        const rightOffset = 155;
+        const pipetteOffsetFromTop = dropStartPosition.top ?? 140;
+        const dropSpeed = 0.35;
+        const startScroll = dropStartScroll ?? scrollY;
+        const scrollDelta = Math.max(0, scrollY - startScroll);
+        const fallbackLeft = Math.max(40, window.innerWidth - rightOffset);
+        const baseLeft = dropStartPosition.left || fallbackLeft;
+        const ballLeft = Math.max(20, baseLeft);
+
+        let ballViewportTop = pipetteOffsetFromTop + scrollDelta * dropSpeed;
+        const targetViewportTop = physicsRect.top - 40;
+        if (targetViewportTop > pipetteOffsetFromTop) {
+          ballViewportTop = Math.min(ballViewportTop, targetViewportTop);
+        }
+        ballViewportTop = Math.max(pipetteOffsetFromTop, ballViewportTop);
+
+        setBallPosition({ top: ballViewportTop, left: ballLeft });
+
+        const ballDocTop = scrollY + ballViewportTop;
+        const ballBottomDoc = ballDocTop + 20;
+
+        if (ballBottomDoc >= physicsTopDoc && !hasExploded) {
+          // Ball has hit the section - explode!
+          setHasExploded(true);
+
+          const hitX = physicsRect.left + physicsRect.width / 2;
+          const hitY = physicsRect.top;
+
+          setPurpleReveal({ active: true, x: hitX, y: hitY });
+
+          setTimeout(() => {
+            setShowPurpleBackground(true);
+            setShowBall(false);
+            setPurpleReveal((prev) => ({ ...prev, active: false }));
+          }, 1000);
+        }
+      }
+    };
+
+    const onScroll = () => {
+      if (scrollTimeout) clearTimeout(scrollTimeout);
+      scrollTimeout = setTimeout(() => {
+        animationFrameId = requestAnimationFrame(handleScroll);
+      }, 10);
+    };
+
+    window.addEventListener('scroll', onScroll, { passive: true });
+    handleScroll(); // Initial call
+
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+      if (scrollTimeout) clearTimeout(scrollTimeout);
+      if (animationFrameId) cancelAnimationFrame(animationFrameId);
+    };
+  }, [showBall, hasExploded, dropStartScroll, dropStartPosition.top, dropStartPosition.left]);
+
   return (
-    <div className="min-h-screen bg-gradient-to-b from-[#001C3D] via-[#332277] to-[#001C3D]">
-      {/* Animated Background Particles */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
-        <div className="absolute inset-0 opacity-30">
-          {particlePositions.length > 0 && particlePositions.map((particle, i) => (
-    <div
-              key={i}
-              className="absolute w-2 h-2 bg-[#D8F878] rounded-full animate-float"
-      style={{
-                left: `${particle.left}%`,
-                top: `${particle.top}%`,
-                animationDelay: `${particle.delay}s`,
-                animationDuration: `${particle.duration}s`,
-              }}
-            />
-          ))}
-        </div>
-        <div className="absolute inset-0 opacity-20">
-          {smallParticlePositions.length > 0 && smallParticlePositions.map((particle, i) => (
+    <div className={`min-h-screen relative ${showPurpleBackground ? 'bg-linear-to-b from-purple-100 to-purple-200' : 'bg-slate-50'}`}>
+      {/* Purple Background Reveal Animation */}
+      {purpleReveal.active && (
+        <>
+          <div className="fixed inset-0 pointer-events-none" style={{ zIndex: 12 }}>
             <div
-              key={i}
-              className="absolute w-1 h-1 bg-[#E47CB8] rounded-full animate-float"
-          style={{
-                left: `${particle.left}%`,
-                top: `${particle.top}%`,
-                animationDelay: `${particle.delay}s`,
-                animationDuration: `${particle.duration}s`,
+              className="absolute rounded-full bg-linear-to-br from-purple-500/90 to-pink-400/80 shadow-[0_0_40px_rgba(168,85,247,0.7)]"
+              style={{
+                width: '60px',
+                height: '60px',
+                left: `${purpleReveal.x}px`,
+                top: `${purpleReveal.y}px`,
+                transform: 'translate(-50%, -50%)',
+                animation: 'purpleSplash 1s ease-out forwards',
               }}
             />
-          ))}
-        </div>
-      </div>
+          </div>
+          <div
+            className="fixed inset-0 pointer-events-none z-10"
+            style={{
+              '--reveal-x': `${purpleReveal.x}px`,
+              '--reveal-y': `${purpleReveal.y}px`,
+            } as React.CSSProperties & { '--reveal-x': string; '--reveal-y': string }}
+          >
+            <div
+              className="absolute inset-0 bg-linear-to-b from-purple-100 to-purple-200 opacity-90"
+              style={{ animation: 'purpleReveal 1s ease-out forwards' }}
+            />
+          </div>
+        </>
+      )}
 
-      {/* Hero Section */}
-      <section
-        ref={heroRef}
-        className="relative min-h-screen flex items-center justify-center overflow-hidden z-10"
-      >
-        <div className="container mx-auto px-4 py-20 text-center relative z-20">
-          {/* 3D Pipette Visual Placeholder */}
-          <div className="mb-12 flex justify-center">
-            <div className="relative w-64 h-96">
-              {/* Pipette Illustration */}
-              <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <div className="relative">
-                  {/* Pipette Body */}
-                  <div className="w-16 h-48 bg-gradient-to-b from-white/20 to-white/10 backdrop-blur-sm rounded-t-2xl border border-white/30 shadow-2xl mx-auto relative">
-                    <div className="absolute top-2 left-1/2 transform -translate-x-1/2 w-12 h-8 bg-gradient-to-b from-[#9448B0]/50 to-[#332277]/50 rounded-lg"></div>
-                    <div className="absolute bottom-0 left-1/2 transform -translate-x-1/2 w-8 h-16 bg-gradient-to-b from-white/30 to-transparent rounded-b-lg"></div>
-                  </div>
-                  {/* Tip */}
-                  <div className="absolute -bottom-8 left-1/2 transform -translate-x-1/2 w-4 h-12 bg-gradient-to-b from-white/40 to-[#D8F878]/60 rounded-b-full border border-[#D8F878]/50"></div>
-                  {/* Test Tube with Glowing Liquid */}
-                  <div className="absolute -bottom-20 left-1/2 transform -translate-x-1/2">
-                    <div className="w-12 h-20 bg-white/10 backdrop-blur-sm rounded-b-lg border border-white/20 relative overflow-hidden">
-                      <div className="absolute bottom-0 w-full h-12 bg-gradient-to-t from-[#D8F878]/60 to-[#D8F878]/30 animate-pulse"></div>
-                      <div className="absolute bottom-0 w-full h-8 bg-[#D8F878]/40 blur-sm animate-pulse"></div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              {/* Glow Effect */}
-              <div className="absolute inset-0 bg-gradient-radial from-[#D8F878]/20 via-transparent to-transparent blur-3xl animate-pulse"></div>
+      {/* Pink Ball */}
+      {showBall && !hasExploded && (
+        <div
+          ref={ballRef}
+          className="fixed z-50 pointer-events-none transition-all duration-100"
+          style={{
+            top: `${ballPosition.top}px`,
+            left: `${ballPosition.left}px`,
+            width: '20px',
+            height: '20px',
+          }}
+        >
+          <div className="w-full h-full bg-pink-200 rounded-full shadow-lg opacity-80 animate-pulse" />
         </div>
-      </div>
+      )}
 
-          <h1 className="text-7xl md:text-9xl font-bold text-white mb-6 animate-fade-in">
-            Pipette<span className="text-[#D8F878]">Pro</span>
-          </h1>
-          <p className="text-2xl md:text-3xl text-gray-300 mb-8 max-w-3xl mx-auto animate-fade-in">
-            Master pipetting accuracy through immersive 3D simulation.
-          </p>
-          <div className="flex justify-center items-center mb-6 animate-fade-in">
-            <button
-              onClick={() => {
-                if (user) {
-                  router.push('/home');
-                } else {
-                  router.push('/signup');
-                }
-              }}
-              className="px-12 py-5 bg-gradient-to-r from-[#9448B0] to-[#332277] text-white font-bold text-xl rounded-xl shadow-2xl hover:shadow-[#9448B0]/50 transform hover:scale-105 transition-all duration-300 border border-white/20"
-            >
-              Get Started
-            </button>
+      {/* Explosion Effect */}
+      {hasExploded && (
+        <div
+          className="fixed z-50 pointer-events-none"
+          style={{
+            top: `${ballPosition.top}px`,
+            left: `${ballPosition.left}px`,
+          }}
+        >
+          <div className="relative">
+            {[...Array(12)].map((_, i) => {
+              const angle = (i * 30) * (Math.PI / 180); // Convert to radians
+              const distance = 100;
+              const x = Math.cos(angle) * distance;
+              const y = Math.sin(angle) * distance;
+              return (
+                <div
+                  key={i}
+                  className="absolute w-2 h-2 bg-pink-300 rounded-full"
+                  style={{
+                    animation: `explode 0.6s ease-out forwards`,
+                    '--x': `${x}px`,
+                    '--y': `${y}px`,
+                    transformOrigin: 'center',
+                  } as React.CSSProperties & { '--x': string; '--y': string }}
+                />
+              );
+            })}
           </div>
         </div>
+      )}
 
-        {/* Scroll Indicator */}
-        <div className="absolute bottom-10 left-1/2 transform -translate-x-1/2 animate-bounce">
-          <div className="w-6 h-10 border-2 border-white/30 rounded-full flex justify-center">
-            <div className="w-1 h-3 bg-white/50 rounded-full mt-2 animate-pulse"></div>
+      <div className="relative z-40">
+        {/* Hero Section */}
+        <section
+          ref={heroRef}
+          className="relative min-h-screen flex items-center justify-center overflow-hidden"
+        >
+          {/* Pipette Image - Right Side */}
+          <div
+            ref={pipetteRef}
+            className="hidden lg:block absolute right-12 top-1/2 -translate-y-1/2 transform z-30 pointer-events-none"
+          >
+            <Image
+              src="/2D_pipette.png"
+              alt="Pipette"
+              width={200}
+              height={400}
+              className="opacity-90"
+              unoptimized
+              priority
+            />
           </div>
-                </div>
-      </section>
 
-      {/* How It Works Section */}
-      <section className="relative py-32 px-4 z-10">
+          <div className="container mx-auto px-4 py-20 text-center">
+            <h1 className="text-6xl md:text-8xl font-bold text-slate-900 mb-6 animate-fade-in">
+              Pipette<span className="text-slate-600">Pro</span>
+            </h1>
+            <p className="text-xl md:text-2xl text-slate-600 mb-8 max-w-3xl mx-auto animate-fade-in">
+              Master pipetting accuracy through immersive 3D simulation.
+            </p>
+            <div className="flex justify-center items-center mb-6 animate-fade-in">
+              <button
+                onClick={() => {
+                  if (user) {
+                    router.push('/home');
+                  } else {
+                    router.push('/signup');
+                  }
+                }}
+                className="px-12 py-5 bg-slate-900 text-white font-bold text-xl rounded-xl shadow-lg hover:bg-slate-800 transform hover:scale-105 transition-all duration-300"
+              >
+                Get Started
+              </button>
+            </div>
+          </div>
+
+          {/* Scroll Indicator */}
+          <div className="absolute bottom-10 left-1/2 transform -translate-x-1/2 animate-bounce z-20">
+            <div className="w-6 h-10 border-2 border-slate-300 rounded-full flex justify-center">
+              <div className="w-1 h-3 bg-slate-400 rounded-full mt-2 animate-pulse"></div>
+            </div>
+          </div>
+        </section>
+
+        {/* How It Works Section */}
+        <section className="relative py-20 px-4 bg-white">
         <div className="container mx-auto max-w-6xl">
-          <h2 className="text-5xl md:text-6xl font-bold text-white text-center mb-4 scroll-animate">
+          <h2 className="text-4xl md:text-5xl font-semibold text-slate-900 text-center mb-4 scroll-animate">
             How It Works
-                </h2>
-          <p className="text-xl text-gray-400 text-center mb-16 scroll-animate">
+          </h2>
+          <p className="text-lg text-slate-600 text-center mb-12 scroll-animate">
             Three powerful ways to master pipetting
           </p>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {/* Simulation Card */}
-            <div className="bg-white/5 backdrop-blur-md rounded-2xl p-8 border border-white/10 hover:border-[#9448B0]/50 transition-all duration-300 hover:transform hover:scale-105 scroll-animate">
-              <div className="w-16 h-16 bg-gradient-to-br from-[#9448B0] to-[#332277] rounded-xl flex items-center justify-center mb-6 text-3xl">
+            <div className="bg-white border-2 border-slate-200 rounded-xl p-8 hover:border-slate-400 hover:shadow-md transition-all duration-300 scroll-animate">
+              <div className="w-16 h-16 bg-slate-100 rounded-xl flex items-center justify-center mb-6 text-3xl">
                 🧪
               </div>
-              <h3 className="text-2xl font-bold text-white mb-4">Simulation</h3>
-              <p className="text-gray-300 leading-relaxed">
+              <h3 className="text-xl font-semibold text-slate-900 mb-4">Simulation</h3>
+              <p className="text-slate-600 leading-relaxed mb-4">
                 Practice real pipetting techniques in a virtual lab environment with realistic physics and feedback.
-                </p>
-                <Link
-                  href="/simulator"
-                className="inline-block mt-6 text-[#D8F878] hover:text-[#D8F878]/80 font-semibold"
+              </p>
+              <Link
+                href="/simulator"
+                className="inline-block mt-4 text-slate-900 hover:text-slate-700 font-semibold"
               >
                 Try it now →
               </Link>
             </div>
 
             {/* Quiz Card */}
-            <div className="bg-white/5 backdrop-blur-md rounded-2xl p-8 border border-white/10 hover:border-[#E47CB8]/50 transition-all duration-300 hover:transform hover:scale-105 scroll-animate">
-              <div className="w-16 h-16 bg-gradient-to-br from-[#E47CB8] to-[#9448B0] rounded-xl flex items-center justify-center mb-6 text-3xl">
+            <div className="bg-white border-2 border-slate-200 rounded-xl p-8 hover:border-slate-400 hover:shadow-md transition-all duration-300 scroll-animate">
+              <div className="w-16 h-16 bg-slate-100 rounded-xl flex items-center justify-center mb-6 text-3xl">
                 💬
               </div>
-              <h3 className="text-2xl font-bold text-white mb-4">Quiz</h3>
-              <p className="text-gray-300 leading-relaxed">
+              <h3 className="text-xl font-semibold text-slate-900 mb-4">Quiz</h3>
+              <p className="text-slate-600 leading-relaxed mb-4">
                 Test your precision and understanding with interactive quizzes covering all pipetting fundamentals.
               </p>
               <Link
                 href="/quiz"
-                className="inline-block mt-6 text-[#D8F878] hover:text-[#D8F878]/80 font-semibold"
+                className="inline-block mt-4 text-slate-900 hover:text-slate-700 font-semibold"
               >
                 Start quiz →
-                </Link>
+              </Link>
             </div>
 
             {/* Challenge Card */}
-            <div className="bg-white/5 backdrop-blur-md rounded-2xl p-8 border border-white/10 hover:border-[#D8F878]/50 transition-all duration-300 hover:transform hover:scale-105 scroll-animate">
-              <div className="w-16 h-16 bg-gradient-to-br from-[#D8F878] to-[#22c55e] rounded-xl flex items-center justify-center mb-6 text-3xl">
+            <div className="bg-white border-2 border-slate-200 rounded-xl p-8 hover:border-slate-400 hover:shadow-md transition-all duration-300 scroll-animate">
+              <div className="w-16 h-16 bg-slate-100 rounded-xl flex items-center justify-center mb-6 text-3xl">
                 🎮
               </div>
-              <h3 className="text-2xl font-bold text-white mb-4">Challenge</h3>
-              <p className="text-gray-300 leading-relaxed">
+              <h3 className="text-xl font-semibold text-slate-900 mb-4">Challenge</h3>
+              <p className="text-slate-600 leading-relaxed mb-4">
                 Compete and improve your accuracy with timed challenges and performance tracking.
               </p>
               <Link
                 href="/challenge"
-                className="inline-block mt-6 text-[#D8F878] hover:text-[#D8F878]/80 font-semibold"
+                className="inline-block mt-4 text-slate-900 hover:text-slate-700 font-semibold"
               >
                 Take challenge →
               </Link>
@@ -228,25 +334,23 @@ export default function LandingPage() {
       </section>
 
       {/* Interactive Preview Section */}
-      <section className="relative py-32 px-4 z-10">
+      <section 
+        ref={physicsSectionRef}
+        className={`relative py-20 px-4 ${showPurpleBackground ? 'bg-purple-200' : 'bg-slate-50'}`}
+      >
         <div className="container mx-auto max-w-6xl">
-          <div className="bg-gradient-to-r from-white/10 to-white/5 backdrop-blur-md rounded-3xl p-12 border border-white/20 relative overflow-hidden scroll-animate">
-            {/* Mock 3D Environment Visual */}
-            <div className="grid grid-cols-3 gap-4 mb-8 opacity-60">
-              {[...Array(9)].map((_, i) => (
-                <div
-                  key={i}
-                  className="aspect-square bg-gradient-to-br from-[#9448B0]/20 to-[#332277]/20 rounded-lg border border-white/10 flex items-center justify-center"
-                >
-                  <div className="w-8 h-8 bg-[#D8F878]/30 rounded-full"></div>
-                </div>
-              ))}
-            </div>
+          <div className={`border-2 rounded-2xl p-12 relative overflow-hidden scroll-animate ${
+            showPurpleBackground ? 'bg-purple-100 border-purple-300' : 'bg-white border-slate-200'
+          }`}>
             <div className="text-center">
-              <h3 className="text-4xl font-bold text-white mb-4">
+              <h3 className={`text-3xl font-semibold mb-4 ${
+                showPurpleBackground ? 'text-purple-900' : 'text-slate-900'
+              }`}>
                 Realistic Physics. Real Lab Experience.
               </h3>
-              <p className="text-xl text-gray-300 max-w-2xl mx-auto">
+              <p className={`text-lg max-w-2xl mx-auto ${
+                showPurpleBackground ? 'text-purple-800' : 'text-slate-600'
+              }`}>
                 Experience accurate liquid handling, precise volume measurements, and authentic lab scenarios in a fully interactive 3D environment.
               </p>
             </div>
@@ -255,72 +359,61 @@ export default function LandingPage() {
       </section>
 
       {/* Feature Highlight Section */}
-      <section className="relative py-32 px-4 z-10">
+      <section className={`relative py-20 px-4 ${showPurpleBackground ? 'bg-purple-200' : 'bg-white'}`}>
         <div className="container mx-auto max-w-6xl">
-          <h2 className="text-5xl md:text-6xl font-bold text-white text-center mb-16 scroll-animate">
+          <h2 className="text-4xl md:text-5xl font-semibold text-slate-900 text-center mb-12 scroll-animate">
             Powerful Features
-                </h2>
+          </h2>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Mistake Analyzer */}
-            <div className="bg-white/5 backdrop-blur-md rounded-2xl p-8 border border-white/10 scroll-animate">
-              <div className="w-20 h-20 bg-gradient-to-br from-red-500/20 to-orange-500/20 rounded-2xl flex items-center justify-center mb-6 text-4xl">
+            <div className="bg-white border-2 border-slate-200 rounded-xl p-8 scroll-animate">
+              <div className="w-16 h-16 bg-slate-100 rounded-xl flex items-center justify-center mb-6 text-3xl">
                 ⚠️
               </div>
-              <h3 className="text-2xl font-bold text-white mb-4">Mistake Analyzer</h3>
-              <p className="text-gray-300">
+              <h3 className="text-xl font-semibold text-slate-900 mb-4">Mistake Analyzer</h3>
+              <p className="text-slate-600">
                 Learn from errors with detailed feedback and corrective guidance for every mistake.
               </p>
             </div>
 
-            {/* Results Dashboard */}
-            <div className="bg-white/5 backdrop-blur-md rounded-2xl p-8 border border-white/10 scroll-animate">
-              <div className="w-20 h-20 bg-gradient-to-br from-blue-500/20 to-cyan-500/20 rounded-2xl flex items-center justify-center mb-6 text-4xl">
-                📊
-              </div>
-              <h3 className="text-2xl font-bold text-white mb-4">Results Dashboard</h3>
-              <p className="text-gray-300">
-                Track your improvement with comprehensive analytics and performance metrics.
-              </p>
-            </div>
-
             {/* AI Guidance */}
-            <div className="bg-white/5 backdrop-blur-md rounded-2xl p-8 border border-white/10 scroll-animate">
-              <div className="w-20 h-20 bg-gradient-to-br from-purple-500/20 to-pink-500/20 rounded-2xl flex items-center justify-center mb-6 text-4xl">
+            <div className="bg-white border-2 border-slate-200 rounded-xl p-8 scroll-animate">
+              <div className="w-16 h-16 bg-slate-100 rounded-xl flex items-center justify-center mb-6 text-3xl">
                 🤖
               </div>
-              <h3 className="text-2xl font-bold text-white mb-4">AI Guidance</h3>
-              <p className="text-gray-300">
+              <h3 className="text-xl font-semibold text-slate-900 mb-4">AI Guidance</h3>
+              <p className="text-slate-600">
                 Receive personalized feedback and recommendations to enhance your technique.
               </p>
             </div>
           </div>
-                </div>
+        </div>
       </section>
 
       {/* Testimonials Section */}
-      <section className="relative py-32 px-4 z-10">
+      <section className={`relative py-20 px-4 ${showPurpleBackground ? 'bg-purple-100' : 'bg-slate-50'}`}>
         <div className="container mx-auto max-w-6xl">
-          <div className="bg-white/5 backdrop-blur-md rounded-3xl p-12 border border-white/10 scroll-animate">
-            <h2 className="text-4xl font-bold text-white text-center mb-4">
+          <div className="bg-white border-2 border-slate-200 rounded-2xl p-12 scroll-animate">
+            <h2 className="text-3xl font-semibold text-slate-900 text-center mb-4">
               Trusted by Educators and Lab Enthusiasts
-                </h2>
-            <p className="text-xl text-gray-400 text-center mb-12">
+            </h2>
+            <p className="text-lg text-slate-600 text-center mb-12">
               Join thousands of students and professionals mastering pipetting skills
             </p>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              <div className="bg-white/5 rounded-xl p-6 border border-white/10">
-                <p className="text-gray-300 mb-4 italic">
-                  "PipettePro transformed how I teach pipetting. Students learn faster and make fewer mistakes in the real lab."
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-6">
+                <p className="text-slate-700 mb-4 italic">
+                  &ldquo;PipettePro transformed how I teach pipetting. Students learn faster and make fewer mistakes in the real lab.&rdquo;
                 </p>
-                <p className="text-white font-semibold">— Dr. Sarah Chen, Biology Professor</p>
+                <p className="text-slate-900 font-semibold">— Dr. Sarah Chen, Biology Professor</p>
               </div>
-              <div className="bg-white/5 rounded-xl p-6 border border-white/10">
-                <p className="text-gray-300 mb-4 italic">
-                  "The 3D simulation feels incredibly realistic. I've improved my accuracy by 30% in just two weeks."
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-6">
+                <p className="text-slate-700 mb-4 italic">
+                  &ldquo;The 3D simulation feels incredibly realistic. I&rsquo;ve improved my accuracy by 30% in just two weeks.&rdquo;
                 </p>
-                <p className="text-white font-semibold">— Alex Martinez, Research Technician</p>
+                <p className="text-slate-900 font-semibold">— Alex Martinez, Research Technician</p>
               </div>
             </div>
           </div>
@@ -328,22 +421,25 @@ export default function LandingPage() {
       </section>
 
       {/* Sign-Up CTA Section */}
-      <section className="relative py-32 px-4 z-10">
+      <section className={`relative py-20 px-4 ${showPurpleBackground ? 'bg-purple-200' : 'bg-white'}`}>
         <div className="container mx-auto max-w-4xl">
-          <div className="bg-gradient-to-r from-[#9448B0]/20 to-[#332277]/20 backdrop-blur-md rounded-3xl p-12 border border-white/20 text-center scroll-animate">
-            <h2 className="text-4xl font-bold text-white mb-4">
+          <div className="bg-slate-50 border-2 border-slate-200 rounded-2xl p-12 text-center scroll-animate">
+            <h2 className="text-3xl font-semibold text-slate-900 mb-4">
               Create a Free Account
             </h2>
-            <p className="text-xl text-gray-300 mb-8">
+            <p className="text-lg text-slate-600 mb-8">
               Save your progress and unlock advanced challenges
             </p>
             <div className="flex flex-col sm:flex-row gap-4 max-w-md mx-auto">
               <input
                 type="email"
                 placeholder="Enter your email"
-                className="flex-1 px-6 py-4 bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:border-[#D8F878] transition-colors"
+                className="flex-1 px-6 py-4 bg-white border-2 border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:border-slate-400 transition-colors"
               />
-              <button className="px-8 py-4 bg-gradient-to-r from-[#9448B0] to-[#332277] text-white font-bold rounded-xl hover:shadow-lg transform hover:scale-105 transition-all duration-300">
+              <button 
+                onClick={() => router.push('/signup')}
+                className="px-8 py-4 bg-slate-900 text-white font-semibold rounded-xl hover:bg-slate-800 transform hover:scale-105 transition-all duration-300"
+              >
                 Sign Up
               </button>
             </div>
@@ -351,48 +447,48 @@ export default function LandingPage() {
         </div>
       </section>
 
-        {/* Footer */}
-      <footer className="relative py-16 px-4 border-t border-white/10 z-10">
+      {/* Footer */}
+      <footer className={`relative py-12 px-4 border-t ${showPurpleBackground ? 'border-purple-300 bg-purple-100' : 'border-slate-200 bg-white'}`}>
         <div className="container mx-auto max-w-6xl">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-8">
             <div>
-              <h3 className="text-2xl font-bold text-white mb-4">
-                Pipette<span className="text-[#D8F878]">Pro</span>
+              <h3 className="text-2xl font-semibold text-slate-900 mb-4">
+                Pipette<span className="text-slate-600">Pro</span>
               </h3>
-          <p className="text-gray-400 text-sm">
+              <p className="text-slate-600 text-sm">
                 Master pipetting through immersive 3D simulation.
               </p>
             </div>
             <div>
-              <h4 className="text-white font-semibold mb-4">Navigation</h4>
+              <h4 className="text-slate-900 font-semibold mb-4">Navigation</h4>
               <ul className="space-y-2">
-                <li><Link href="/" className="text-gray-400 hover:text-[#D8F878] transition-colors">Home</Link></li>
-                <li><Link href="/simulator" className="text-gray-400 hover:text-[#D8F878] transition-colors">Simulation</Link></li>
-                <li><Link href="/quiz" className="text-gray-400 hover:text-[#D8F878] transition-colors">Quiz</Link></li>
+                <li><Link href="/" className="text-slate-600 hover:text-slate-900 transition-colors">Home</Link></li>
+                <li><Link href="/simulator" className="text-slate-600 hover:text-slate-900 transition-colors">Simulation</Link></li>
+                <li><Link href="/quiz" className="text-slate-600 hover:text-slate-900 transition-colors">Quiz</Link></li>
               </ul>
             </div>
             <div>
-              <h4 className="text-white font-semibold mb-4">Learn</h4>
+              <h4 className="text-slate-900 font-semibold mb-4">Learn</h4>
               <ul className="space-y-2">
-                <li><Link href="/mistakes" className="text-gray-400 hover:text-[#D8F878] transition-colors">Mistakes</Link></li>
-                <li><Link href="/challenge" className="text-gray-400 hover:text-[#D8F878] transition-colors">Challenge</Link></li>
-                <li><Link href="/results" className="text-gray-400 hover:text-[#D8F878] transition-colors">Results</Link></li>
+                <li><Link href="/mistakes" className="text-slate-600 hover:text-slate-900 transition-colors">Mistakes</Link></li>
+                <li><Link href="/challenge" className="text-slate-600 hover:text-slate-900 transition-colors">Challenge</Link></li>
               </ul>
             </div>
             <div>
-              <h4 className="text-white font-semibold mb-4">Connect</h4>
+              <h4 className="text-slate-900 font-semibold mb-4">Connect</h4>
               <div className="flex gap-4">
-                <a href="#" className="text-gray-400 hover:text-[#D8F878] transition-colors">Twitter</a>
-                <a href="#" className="text-gray-400 hover:text-[#D8F878] transition-colors">LinkedIn</a>
-                <a href="#" className="text-gray-400 hover:text-[#D8F878] transition-colors">GitHub</a>
+                <a href="#" className="text-slate-600 hover:text-slate-900 transition-colors">Twitter</a>
+                <a href="#" className="text-slate-600 hover:text-slate-900 transition-colors">LinkedIn</a>
+                <a href="#" className="text-slate-600 hover:text-slate-900 transition-colors">GitHub</a>
               </div>
             </div>
           </div>
-          <div className="border-t border-white/10 pt-8 text-center text-gray-400 text-sm">
+          <div className="border-t border-slate-200 pt-8 text-center text-slate-600 text-sm">
             <p>© 2024 PipettePro. All rights reserved.</p>
           </div>
         </div>
       </footer>
+      </div>
     </div>
   );
 }
