@@ -113,7 +113,7 @@ export async function POST(request: Request) {
       .trim() || '{}';
 
     // Parse JSON from response
-    let scenarioData: Partial<SimulationScenario>;
+    let scenarioData: Partial<SimulationScenario> & { error?: string };
     try {
       const jsonMatch = content.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
