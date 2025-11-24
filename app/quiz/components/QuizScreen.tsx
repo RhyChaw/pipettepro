@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { QUESTIONS } from '../constants';
 import { Category, Difficulty, Question, QuizResult, QuestionOption } from '../types';
 import { CheckIcon, XIcon } from './icons';
+import AudioPlayer from '../../components/AudioPlayer';
 
 interface QuizScreenProps {
   category: Category;
