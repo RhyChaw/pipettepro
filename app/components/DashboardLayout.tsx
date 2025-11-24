@@ -6,37 +6,6 @@ import { usePathname } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 
-// Tutorial Button Component - Passes tutorial state to simulator
-function TutorialButton() {
-  const [showTooltip, setShowTooltip] = useState(false);
-  
-  const handleClick = () => {
-    // Dispatch a custom event that the simulator can listen to
-    window.dispatchEvent(new CustomEvent('showTutorial'));
-  };
-
-  return (
-    <>
-      <button
-        onClick={handleClick}
-        onMouseEnter={() => setShowTooltip(true)}
-        onMouseLeave={() => setShowTooltip(false)}
-        className="fixed top-20 left-4 z-50 bg-blue-600 hover:bg-blue-700 text-white rounded-full w-12 h-12 shadow-lg transition-colors flex items-center justify-center"
-        aria-label="Get Tutorial"
-      >
-        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-        </svg>
-      </button>
-      {showTooltip && (
-        <div className="fixed top-20 left-20 z-50 bg-slate-900 text-white px-3 py-2 rounded-lg text-sm shadow-lg whitespace-nowrap">
-          Get Tutorial
-        </div>
-      )}
-    </>
-  );
-}
-
 function StickyNotesToggleButton() {
   const [showTooltip, setShowTooltip] = useState(false);
 
@@ -199,12 +168,9 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         </button>
       )}
 
-      {/* Tutorial Button - Only show on simulator page */}
+      {/* Sticky Notes Button - Only show on simulator page */}
       {pathname === '/simulator' && (
-        <>
-          <TutorialButton />
-          <StickyNotesToggleButton />
-        </>
+        <StickyNotesToggleButton />
       )}
 
       {/* Sidebar */}

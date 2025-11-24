@@ -44,12 +44,17 @@ export default function HomePage() {
       // First check Firebase for saved progress
       if (userProfile?.roadmapProgress) {
         const completed = new Set<number>(userProfile.roadmapProgress);
-        setCompletedSteps(completed);
+        // Use setTimeout to avoid synchronous setState in effect
+        setTimeout(() => {
+          setCompletedSteps(completed);
+        }, 0);
         // Sync to localStorage
         localStorage.setItem(`roadmap_${user.email}`, JSON.stringify(userProfile.roadmapProgress));
         // Show mascot in corner if all steps are completed
         if (completed.has(2) && completed.has(3) && completed.has(4)) {
-          setMascotInCorner(true);
+          setTimeout(() => {
+            setMascotInCorner(true);
+          }, 0);
         }
       } else {
         // Fallback to localStorage
@@ -57,10 +62,14 @@ export default function HomePage() {
         if (stored) {
           try {
             const completed = JSON.parse(stored) as number[];
-            setCompletedSteps(new Set<number>(completed));
+            setTimeout(() => {
+              setCompletedSteps(new Set<number>(completed));
+            }, 0);
             // Show mascot in corner if step 5 is completed
             if (completed.includes(5)) {
-              setMascotInCorner(true);
+              setTimeout(() => {
+                setMascotInCorner(true);
+              }, 0);
             }
           } catch (e) {
             console.error('Error parsing completed steps:', e);
@@ -402,7 +411,7 @@ export default function HomePage() {
                     }`}
                   >
                     {/* Circle */}
-                    <div className={`relative z-10 flex-shrink-0 w-12 h-12 rounded-full flex items-center justify-center border-4 transition-all duration-300 ${
+                    <div className={`relative z-10 shrink-0 w-12 h-12 rounded-full flex items-center justify-center border-4 transition-all duration-300 ${
                       stepCompleted
                         ? 'bg-green-500 border-green-600'
                         : 'bg-white border-slate-300'
@@ -640,7 +649,7 @@ export default function HomePage() {
                 }}
                 className="flex-1 bg-gradient-to-r from-blue-600 to-purple-600 text-white font-bold py-4 px-6 rounded-xl hover:from-blue-700 hover:to-purple-700 transform hover:scale-105 transition-all duration-200 shadow-lg hover:shadow-xl animate-pulse-slow"
               >
-                Yes! Let's go!
+                Yes! Let&apos;s go!
               </button>
               <button
                 onClick={() => setShowOnboardingModal(false)}
@@ -681,7 +690,7 @@ export default function HomePage() {
                   Welcome to PipettePro!
                 </p>
                 <p className="text-slate-700 text-center leading-relaxed">
-                  I'm here to guide you through pipetting step by step. Together, we'll master the art of precise liquid handling!
+                  I&apos;m here to guide you through pipetting step by step. Together, we&apos;ll master the art of precise liquid handling!
                 </p>
               </div>
             </div>
@@ -713,7 +722,7 @@ export default function HomePage() {
                 }}
                 className="w-full bg-gradient-to-r from-blue-600 to-purple-600 text-white font-bold py-4 px-6 rounded-xl hover:from-blue-700 hover:to-purple-700 transform hover:scale-105 transition-all duration-200 shadow-lg hover:shadow-xl"
               >
-                Let's begin!
+                Let&apos;s begin!
               </button>
             </div>
           </div>

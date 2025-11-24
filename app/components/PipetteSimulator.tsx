@@ -237,6 +237,7 @@ export default function PipetteSimulator() {
   // Second tutorial for interaction (starts after "Begin Pipetting")
   const [showInteractionTutorial, setShowInteractionTutorial] = useState(false);
   const [currentInteractionStep, setCurrentInteractionStep] = useState(0);
+  const [currentAngle, setCurrentAngle] = useState(75); // Initial angle in degrees
 
   // Auto-clear feedback console after 5 seconds
   useEffect(() => {
@@ -258,6 +259,7 @@ export default function PipetteSimulator() {
     pipetteTipMesh: PipetteTipMesh;
     sourceContainer: Container;
     destContainer: Container;
+    wasteContainer: Container;
     wasteBin: THREE.Group;
     tipBoxes: Record<string, THREE.Group>;
     confettiSystem: THREE.Points | null;
@@ -513,6 +515,7 @@ export default function PipetteSimulator() {
     // Load beakers (labels will be added in the section below)
     let destContainer: Container = placeholderContainer;
     let sourceContainer: Container = placeholderContainer;
+    let wasteContainer: Container = placeholderContainer;
 
     // Create tip boxes
     const tipBoxes: Record<string, THREE.Group> = {};
@@ -557,13 +560,13 @@ export default function PipetteSimulator() {
       scene.add(tipBoxGroup);
     });
 
-    // Create waste bin as a red box - position it in the middle but backwards
+    // Create waste bin as a red box - position it beside the source beaker
     const binGroup = new THREE.Group();
     const initialY = tableTopY;
-    // Position in the middle (x = 0) and move back (increase z)
-    // Beakers are at z = 0 + 1 - 0.5 = 0.5, so move dustbin back by adding to z
-    const adjustedX = 0; // Middle
-    const adjustedZ = 0.5 + 2.5; // Move back 2.5 units from beakers (z = 3.0)
+    // Position beside source beaker (source is at x = 4, so place waste at x = 6.5)
+    // Same z position as source beaker (z = 0) and same height
+    const adjustedX = 6.5; // Beside source beaker
+    const adjustedZ = 0; // Same z as source beaker
     
     // Create red box for waste bin
     const binGeo = new THREE.BoxGeometry(1.0, 1.2, 1.0);
@@ -632,7 +635,7 @@ export default function PipetteSimulator() {
     (pipetteTipMesh as unknown as PipetteTipMesh).tipLiquid = tipLiquid;
 
     pipetteGroup.add(bodyMesh, plungerMesh, ejectorMesh, shaftMesh, pipetteTipMesh);
-    pipetteGroup.scale.set(0.9, 0.9, 0.9);
+    pipetteGroup.scale.set(0.675, 0.675, 0.675); // 0.75 of original 0.9 scale
     pipetteGroup.position.y = 3;
     // Set initial rotation to 75 degrees (so users can see it's wrong - should be 90 degrees)
     pipetteGroup.rotation.z = (75 * Math.PI) / 180;
@@ -735,8 +738,7 @@ export default function PipetteSimulator() {
     // Add labels to scene (will be positioned dynamically)
     pipetteGroup.add(pipetteLabel);
     pipetteLabel.position.set(0, 1, 0);
-    wasteBin.add(wasteLabel);
-    wasteLabel.position.set(0, 0.8, 0);
+    // Waste label will be added to waste beaker when it loads
 
     // Position tip box label (will be updated when tip box is visible)
     const activeTipBox = tipBoxes[gameState.selectedPipette?.id || 'p200'];
@@ -767,6 +769,18 @@ export default function PipetteSimulator() {
         sceneRef.current.sourceContainer = container;
       }
     });
+    
+    // Create waste beaker (red) beside source beaker
+    createBeakerContainer(6.5, 0, 0.5, 0xef4444).then((container) => {
+      wasteContainer = container;
+      scene.add(container.group);
+      container.group.add(wasteLabel);
+      wasteLabel.position.set(0, 1.2, 0);
+      // Update sceneRef when container is loaded
+      if (sceneRef.current) {
+        sceneRef.current.wasteContainer = container;
+      }
+    });
 
     // Store refs for use in handlers
     // Note: sourceContainer and destContainer will be updated when GLB models load
@@ -780,6 +794,7 @@ export default function PipetteSimulator() {
       pipetteTipMesh: pipetteTipMesh as unknown as PipetteTipMesh,
       sourceContainer,
       destContainer,
+      wasteContainer,
       wasteBin,
       tipBoxes,
       confettiSystem,
@@ -800,6 +815,12 @@ export default function PipetteSimulator() {
       if (!sceneRef.current) return;
 
       const { plungerMesh, gameState, pipetteGroup, pipetteTipMesh, confettiSystem, confettiParticles, liquidAnimation: anim } = sceneRef.current;
+      
+      // Update current angle display
+      if (pipetteGroup) {
+        const angleInDegrees = (pipetteGroup.rotation.z * 180) / Math.PI;
+        setCurrentAngle(Math.round(angleInDegrees));
+      }
 
       // Update plunger position
       let plungerTargetY = 1.5;
@@ -1099,14 +1120,14 @@ export default function PipetteSimulator() {
 
   const ejectTip = () => {
     if (!sceneRef.current) return;
-    const { gameState, wasteBin, pipetteGroup, pipetteTipMesh } = sceneRef.current;
+    const { gameState, wasteContainer, pipetteGroup, pipetteTipMesh } = sceneRef.current;
 
     if (!gameState.hasTip) {
       showFeedback('No Tip', 'There is no tip to eject.', 'error');
       return;
     }
 
-    const binBox = new THREE.Box3().setFromObject(wasteBin);
+    const binBox = new THREE.Box3().setFromObject(wasteContainer.group);
     const pipettePos = new THREE.Vector3();
     pipetteGroup.getWorldPosition(pipettePos);
 
@@ -1120,9 +1141,9 @@ export default function PipetteSimulator() {
       pipetteTipMesh.visible = false;
       gameState.liquidInPipette = 0;
       pipetteTipMesh.tipLiquid.scale.y = 0;
-      showFeedback('Tip Ejected', 'The tip has been discarded correctly in the waste bin.', 'correct');
+      showFeedback('Tip Ejected', 'The tip has been discarded correctly in the waste beaker.', 'correct');
     } else {
-      showFeedback('Incorrect Position', 'Move over the red waste bin to eject the tip.', 'error');
+      showFeedback('Incorrect Position', 'Move over the red waste beaker to eject the tip.', 'error');
     }
   };
 
@@ -1338,14 +1359,17 @@ export default function PipetteSimulator() {
     pipetteGroup.position.x += deltaX;
     pipetteGroup.position.z += deltaZ;
     // Ensure scale remains constant (no scaling based on position)
-    if (pipetteGroup.scale.x !== 0.9 || pipetteGroup.scale.y !== 0.9 || pipetteGroup.scale.z !== 0.9) {
-      pipetteGroup.scale.set(0.9, 0.9, 0.9);
+    if (pipetteGroup.scale.x !== 0.675 || pipetteGroup.scale.y !== 0.675 || pipetteGroup.scale.z !== 0.675) {
+      pipetteGroup.scale.set(0.675, 0.675, 0.675);
     }
   };
 
   const tiltPipette = (angleDelta: number) => {
     if (!sceneRef.current) return;
     sceneRef.current.pipetteGroup.rotation.z += angleDelta;
+    // Update current angle display (convert radians to degrees)
+    const angleInDegrees = (sceneRef.current.pipetteGroup.rotation.z * 180) / Math.PI;
+    setCurrentAngle(Math.round(angleInDegrees));
   };
 
   // Keyboard controls - placed after function definitions
@@ -1432,8 +1456,8 @@ export default function PipetteSimulator() {
       pipetteGroup.position.z = intersectPoint.z;
       pipetteGroup.position.y = currentY; // Keep Y unchanged
       // Ensure scale remains constant
-      if (pipetteGroup.scale.x !== 0.9 || pipetteGroup.scale.y !== 0.9 || pipetteGroup.scale.z !== 0.9) {
-        pipetteGroup.scale.set(0.9, 0.9, 0.9);
+      if (pipetteGroup.scale.x !== 0.675 || pipetteGroup.scale.y !== 0.675 || pipetteGroup.scale.z !== 0.675) {
+        pipetteGroup.scale.set(0.675, 0.675, 0.675);
       }
     };
 
@@ -1662,7 +1686,12 @@ export default function PipetteSimulator() {
       {showInteractionTutorial && (
         <InteractionTutorialOverlay
           currentStep={currentInteractionStep}
+          currentAngle={currentAngle}
           onNext={() => {
+            // Only allow next if angle is 0° on the first step
+            if (currentInteractionStep === 0 && currentAngle !== 0) {
+              return; // Don't advance if angle is not 0°
+            }
             if (currentInteractionStep < 1) {
               setCurrentInteractionStep(currentInteractionStep + 1);
             } else {
@@ -2104,49 +2133,57 @@ export default function PipetteSimulator() {
             {/* Movement Controls */}
             <div id="movement-controls" className="bg-white p-4 rounded-lg border border-slate-300">
               <h4 className="text-sm font-semibold mb-3 text-slate-700">Movement</h4>
-              <div className="flex items-center gap-4 justify-center">
+              
+              {/* Row 1: Arrow Keys | Height */}
+              <div className="flex items-center gap-4 justify-center mb-4">
                 {/* Arrow Keys */}
-                <div className="grid grid-cols-3 gap-2 w-32">
-                  <div></div>
-                  <button
-                    id="arrowUp"
-                    onClick={() => movePipetteHorizontal(0, -0.2)}
-                    className="d-pad-btn bg-slate-200 hover:bg-slate-300 text-slate-900 p-2 rounded-lg shadow-md text-lg font-semibold"
-                    title="Move Forward (↑)"
-                  >
-                    ↑
-                  </button>
-                  <div></div>
-                  <button
-                    id="arrowLeft"
-                    onClick={() => movePipetteHorizontal(-0.2, 0)}
-                    className="d-pad-btn bg-slate-200 hover:bg-slate-300 text-slate-900 p-2 rounded-lg shadow-md text-lg font-semibold"
-                    title="Move Left (←)"
-                  >
-                    ←
-                  </button>
-                  <div className="text-xs text-slate-500 text-center flex items-center justify-center">Arrow Keys</div>
-                  <button
-                    id="arrowRight"
-                    onClick={() => movePipetteHorizontal(0.2, 0)}
-                    className="d-pad-btn bg-slate-200 hover:bg-slate-300 text-slate-900 p-2 rounded-lg shadow-md text-lg font-semibold"
-                    title="Move Right (→)"
-                  >
-                    →
-                  </button>
-                  <div></div>
-                  <button
-                    id="arrowDown"
-                    onClick={() => movePipetteHorizontal(0, 0.2)}
-                    className="d-pad-btn bg-slate-200 hover:bg-slate-300 text-slate-900 p-2 rounded-lg shadow-md text-lg font-semibold"
-                    title="Move Backward (↓)"
-                  >
-                    ↓
-                  </button>
-                  <div></div>
+                <div className="flex flex-col items-center gap-2">
+                  <div className="text-xs font-bold text-slate-700 uppercase">Arrow Keys</div>
+                  <div className="grid grid-cols-3 gap-2 w-32">
+                    <div></div>
+                    <button
+                      id="arrowUp"
+                      onClick={() => movePipetteHorizontal(0, -0.2)}
+                      className="d-pad-btn bg-slate-200 hover:bg-slate-300 text-slate-900 p-2 rounded-lg shadow-md text-lg font-semibold"
+                      title="Move Forward (↑)"
+                    >
+                      ↑
+                    </button>
+                    <div></div>
+                    <button
+                      id="arrowLeft"
+                      onClick={() => movePipetteHorizontal(-0.2, 0)}
+                      className="d-pad-btn bg-slate-200 hover:bg-slate-300 text-slate-900 p-2 rounded-lg shadow-md text-lg font-semibold"
+                      title="Move Left (←)"
+                    >
+                      ←
+                    </button>
+                    <div></div>
+                    <button
+                      id="arrowRight"
+                      onClick={() => movePipetteHorizontal(0.2, 0)}
+                      className="d-pad-btn bg-slate-200 hover:bg-slate-300 text-slate-900 p-2 rounded-lg shadow-md text-lg font-semibold"
+                      title="Move Right (→)"
+                    >
+                      →
+                    </button>
+                    <div></div>
+                    <button
+                      id="arrowDown"
+                      onClick={() => movePipetteHorizontal(0, 0.2)}
+                      className="d-pad-btn bg-slate-200 hover:bg-slate-300 text-slate-900 p-2 rounded-lg shadow-md text-lg font-semibold"
+                      title="Move Backward (↓)"
+                    >
+                      ↓
+                    </button>
+                    <div></div>
+                  </div>
                 </div>
                 
-                {/* Height Controls - Side by side with arrow keys */}
+                {/* Separator */}
+                <div className="h-32 w-px bg-slate-300"></div>
+                
+                {/* Height Controls */}
                 <div className="flex flex-col items-center gap-2">
                   <div className="text-center mb-1">
                     <div className="text-xs font-bold text-slate-700 uppercase">Height</div>
@@ -2179,23 +2216,61 @@ export default function PipetteSimulator() {
                     />
                   </div>
                 </div>
+              </div>
+              
+              {/* Row 2: Orientation | Current Angle */}
+              <div className="flex items-center gap-4 justify-center pt-4 border-t border-slate-200">
+                {/* Orientation Controls */}
+                <div className="flex flex-col items-center gap-2">
+                  <div className="text-xs font-bold text-slate-700 uppercase mb-2">Orientation</div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => tiltPipette(-0.1)}
+                      className="bg-slate-200 hover:bg-slate-300 text-slate-900 px-4 py-2 rounded-lg shadow-md text-sm font-semibold"
+                      title="Tilt Left"
+                    >
+                      ↺ Left
+                    </button>
+                    <button
+                      onClick={() => tiltPipette(0.1)}
+                      className="bg-slate-200 hover:bg-slate-300 text-slate-900 px-4 py-2 rounded-lg shadow-md text-sm font-semibold"
+                      title="Tilt Right"
+                    >
+                      Right ↻
+                    </button>
+                  </div>
+                </div>
                 
-                {/* Tilt Controls */}
-                <div id="tilt-controls" className="mt-4 flex items-center justify-center gap-2">
-                  <button
-                    onClick={() => tiltPipette(-0.1)}
-                    className="bg-slate-200 hover:bg-slate-300 text-slate-900 px-4 py-2 rounded-lg shadow-md text-sm font-semibold"
-                    title="Tilt Left"
-                  >
-                    ↺ Left
-                  </button>
-                  <button
-                    onClick={() => tiltPipette(0.1)}
-                    className="bg-slate-200 hover:bg-slate-300 text-slate-900 px-4 py-2 rounded-lg shadow-md text-sm font-semibold"
-                    title="Tilt Right"
-                  >
-                    Right ↻
-                  </button>
+                {/* Separator */}
+                <div className="h-12 w-px bg-slate-300"></div>
+                
+                {/* Current Angle Display */}
+                <div className="flex flex-col items-center gap-1">
+                  <div className="text-xs font-bold text-slate-700 uppercase">Current Angle</div>
+                  <div className="relative">
+                    <input
+                      id="angle-input"
+                      type="number"
+                      value={currentAngle}
+                      onChange={(e) => {
+                        const newAngle = parseInt(e.target.value) || 0;
+                        setCurrentAngle(newAngle);
+                        if (sceneRef.current) {
+                          // Convert degrees to radians and set rotation
+                          sceneRef.current.pipetteGroup.rotation.z = (newAngle * Math.PI) / 180;
+                        }
+                      }}
+                      className={`px-2 pr-6 py-2 rounded-lg border-2 w-[100px] text-center text-lg font-bold transition-colors ${
+                        currentAngle === 0
+                          ? 'bg-green-50 border-green-500 text-green-700'
+                          : 'bg-slate-100 border-slate-300 text-slate-900'
+                      }`}
+                      style={{ WebkitAppearance: 'textfield', MozAppearance: 'textfield' }}
+                    />
+                    <span className={`absolute right-1 top-1/2 -translate-y-1/2 pointer-events-none text-sm font-semibold ${
+                      currentAngle === 0 ? 'text-green-600' : 'text-slate-500'
+                    }`}>°</span>
+                  </div>
                 </div>
               </div>
             </div>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import DashboardLayout from '../components/DashboardLayout';
 import { useAuth } from '../contexts/AuthContext';
@@ -10,7 +10,6 @@ import { SimulationScenario } from '../types/simulation';
 import { FlashcardSet } from '../types/flashcards';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../utils/firebaseConfig';
-import AudioPlayer from '../components/AudioPlayer';
 
 export default function YourDocsPage() {
   const { user } = useAuth();
@@ -151,7 +150,7 @@ export default function YourDocsPage() {
     }
   };
 
-  const handleGenerateQuiz = async () => {
+  const handleGenerateQuiz = useCallback(async () => {
     if (!processingResult || !user?.email) {
       setError('Please process a document first.');
       return;
@@ -203,9 +202,9 @@ export default function YourDocsPage() {
     } finally {
       setIsGeneratingQuiz(false);
     }
-  };
+  }, [processingResult, user]);
 
-  const handleGenerateScenario = async () => {
+  const handleGenerateScenario = useCallback(async () => {
     if (!processingResult) {
       setError('Please process a document first.');
       return;
@@ -238,9 +237,9 @@ export default function YourDocsPage() {
     } finally {
       setIsGeneratingScenario(false);
     }
-  };
+  }, [processingResult]);
 
-  const handleGenerateFlashcards = async () => {
+  const handleGenerateFlashcards = useCallback(async () => {
     if (!processingResult || !user?.email) {
       setError('Please process a document first.');
       return;
@@ -311,7 +310,7 @@ export default function YourDocsPage() {
     } finally {
       setIsGeneratingFlashcards(false);
     }
-  };
+  }, [processingResult, user, savedNotes, selectedFile, lastSavedNoteId]);
 
   const extractTags = (sections: NoteSection[]): string[] => {
     const tags = new Set<string>();
@@ -351,13 +350,6 @@ export default function YourDocsPage() {
     };
     return colors[type] || 'bg-slate-100 text-slate-800';
   };
-
-  // Load saved notes
-  useEffect(() => {
-    if (user?.email) {
-      loadSavedNotes();
-    }
-  }, [user]);
 
   // Check for URL params to load note and trigger action
   useEffect(() => {
@@ -400,9 +392,9 @@ export default function YourDocsPage() {
         })
         .catch(err => console.error('Error loading note:', err));
     }
-  }, [user]);
+  }, [user, handleGenerateQuiz, handleGenerateScenario, handleGenerateFlashcards]);
 
-  const loadSavedNotes = async () => {
+  const loadSavedNotes = useCallback(async () => {
     if (!user?.email) return;
 
     setLoadingNotes(true);
@@ -427,7 +419,14 @@ export default function YourDocsPage() {
     } finally {
       setLoadingNotes(false);
     }
-  };
+  }, [user]);
+
+  // Load saved notes
+  useEffect(() => {
+    if (user?.email) {
+      loadSavedNotes();
+    }
+  }, [user, loadSavedNotes]);
 
   const handleLoadNote = (note: ExtractedNote) => {
     // Convert note back to ProcessingResult format
@@ -786,7 +785,7 @@ export default function YourDocsPage() {
                   <ol className="space-y-2">
                     {generatedScenario.steps.map((step, idx) => (
                       <li key={step.id} className="flex items-start gap-3 border border-slate-200 rounded-lg p-3">
-                        <span className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-slate-900 text-sm font-semibold text-slate-900 flex-shrink-0">
+                        <span className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-slate-900 text-sm font-semibold text-slate-900 shrink-0">
                           {idx + 1}
                         </span>
                         <div className="flex-1">

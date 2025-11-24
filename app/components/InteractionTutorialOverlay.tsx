@@ -7,14 +7,15 @@ interface InteractionTutorialOverlayProps {
   onNext: () => void;
   onPrevious: () => void;
   onSkip: () => void;
+  currentAngle?: number; // Current pipette angle in degrees
 }
 
 const interactionSteps = [
   {
     id: 'fix-orientation',
     title: 'Fix the Orientation',
-    description: 'The pipette should be at a 90-degree angle (perpendicular to the table). Currently it\'s at 75 degrees. Use the tilt controls to adjust it to 90 degrees.',
-    highlightSelector: '#tilt-controls',
+    description: 'The pipette should be at a 0-degree angle (perpendicular to the table). Currently it\'s at 75 degrees. Type 0 in the angle input box to set it to perpendicular.',
+    highlightSelector: '#angle-input',
     focusArea: 'orientation',
   },
   {
@@ -31,6 +32,7 @@ const InteractionTutorialOverlay: React.FC<InteractionTutorialOverlayProps> = ({
   onNext,
   onPrevious,
   onSkip,
+  currentAngle = 75,
 }) => {
   const step = interactionSteps[currentStep];
   const isLastStep = currentStep === interactionSteps.length - 1;
@@ -137,9 +139,18 @@ const InteractionTutorialOverlay: React.FC<InteractionTutorialOverlayProps> = ({
 
             <button
               onClick={isLastStep ? onSkip : onNext}
-              className="px-6 py-3 rounded-lg font-semibold transition-colors bg-blue-600 text-white hover:bg-blue-700"
+              disabled={currentStep === 0 && currentAngle !== 0}
+              className={`px-6 py-3 rounded-lg font-semibold transition-colors ${
+                currentStep === 0 && currentAngle !== 0
+                  ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
+                  : 'bg-blue-600 text-white hover:bg-blue-700'
+              }`}
             >
-              {isLastStep ? 'Got it!' : 'Next'}
+              {currentStep === 0 && currentAngle !== 0
+                ? 'Set angle to 0° first'
+                : isLastStep
+                ? 'Got it!'
+                : 'Next'}
             </button>
           </div>
         </div>

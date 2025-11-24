@@ -6,6 +6,202 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { useAuth } from '../contexts/AuthContext';
 
+// Quiz Questions
+const quizQuestions = [
+  {
+    question: 'What is the main purpose of a pipette?',
+    options: [
+      'To measure temperature',
+      'To aspirate and dispense precise volumes of liquid',
+      'To mix chemicals',
+      'To store samples'
+    ],
+    correctAnswer: 1
+  },
+  {
+    question: 'Why should you always use a fresh tip for each sample?',
+    options: [
+      'To save money',
+      'To ensure accuracy and prevent cross-contamination',
+      'To make pipetting faster',
+      'To reduce waste'
+    ],
+    correctAnswer: 1
+  },
+  {
+    question: 'How should tips be loaded into the pipette from the tip box?',
+    options: [
+      'Touch them with your hands first',
+      'Directly from the box without touching them',
+      'Wash them first',
+      'Use tweezers'
+    ],
+    correctAnswer: 1
+  },
+  {
+    question: 'When aspirating liquid, how deep should you immerse the tip?',
+    options: [
+      'As deep as possible',
+      'Just below the liquid surface (2-3mm)',
+      'Halfway into the container',
+      'It doesn\'t matter'
+    ],
+    correctAnswer: 1
+  },
+  {
+    question: 'What should you do with used pipette tips?',
+    options: [
+      'Reuse them',
+      'Leave them on the bench',
+      'Eject them into the waste container immediately',
+      'Store them for later'
+    ],
+    correctAnswer: 2
+  }
+];
+
+// Quiz Component
+function QuizComponent({ currentQuestionIndex, onAnswer, onSkip }: { 
+  currentQuestionIndex: number; 
+  onAnswer: (answerIndex: number) => void;
+  onSkip: () => void;
+}) {
+  const question = quizQuestions[currentQuestionIndex];
+  const progress = ((currentQuestionIndex + 1) / quizQuestions.length) * 100;
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-2xl font-bold text-[#001C3D]">Mini Quiz</h3>
+        <button
+          onClick={onSkip}
+          className="text-slate-500 hover:text-slate-700 text-sm font-medium"
+        >
+          Skip Quiz
+        </button>
+      </div>
+      
+      {/* Progress Bar */}
+      <div className="w-full bg-slate-200 rounded-full h-2">
+        <div 
+          className="bg-gradient-to-r from-[#9448B0] to-[#332277] h-2 rounded-full transition-all duration-300"
+          style={{ width: `${progress}%` }}
+        />
+      </div>
+      <p className="text-sm text-slate-600 text-right">
+        Question {currentQuestionIndex + 1} of {quizQuestions.length}
+      </p>
+
+      {/* Question */}
+      <div className="bg-slate-50 rounded-lg p-6 border-2 border-slate-200">
+        <h4 className="text-xl font-semibold text-[#001C3D] mb-6">{question.question}</h4>
+        
+        {/* Options */}
+        <div className="space-y-3">
+          {question.options.map((option, index) => (
+            <button
+              key={index}
+              onClick={() => onAnswer(index)}
+              className="w-full text-left p-4 bg-white rounded-lg border-2 border-slate-300 hover:border-[#9448B0] hover:bg-purple-50 transition-all duration-200 font-medium text-slate-700 hover:text-[#001C3D]"
+            >
+              {option}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Quiz Results Component
+function QuizResults({ answers, onClose, onRetake }: { 
+  answers: number[]; 
+  onClose: () => void;
+  onRetake: () => void;
+}) {
+  const score = answers.reduce((acc, answer, index) => {
+    return acc + (answer === quizQuestions[index].correctAnswer ? 1 : 0);
+  }, 0);
+  const percentage = (score / quizQuestions.length) * 100;
+  const isPerfect = score === quizQuestions.length;
+
+  return (
+    <div className="space-y-6">
+      <h3 className="text-2xl font-bold text-[#001C3D]">Quiz Results</h3>
+      
+      {/* Score Display */}
+      <div className="bg-gradient-to-r from-[#9448B0] to-[#332277] rounded-lg p-8 text-center text-white">
+        <div className="text-5xl font-bold mb-2">{score}/{quizQuestions.length}</div>
+        <div className="text-2xl font-semibold mb-4">{percentage}%</div>
+        {isPerfect ? (
+          <p className="text-lg">🎉 Perfect score! Great job!</p>
+        ) : percentage >= 80 ? (
+          <p className="text-lg">👍 Well done! You have a good understanding.</p>
+        ) : percentage >= 60 ? (
+          <p className="text-lg">📚 Good effort! Review the content to improve.</p>
+        ) : (
+          <p className="text-lg">💪 Keep learning! Review the content and try again.</p>
+        )}
+      </div>
+
+      {/* Review Answers */}
+      <div className="space-y-4">
+        <h4 className="text-xl font-semibold text-[#001C3D]">Review Your Answers</h4>
+        {quizQuestions.map((question, index) => {
+          const userAnswer = answers[index];
+          const isCorrect = userAnswer === question.correctAnswer;
+          
+          return (
+            <div 
+              key={index}
+              className={`p-4 rounded-lg border-2 ${
+                isCorrect 
+                  ? 'bg-green-50 border-green-300' 
+                  : 'bg-red-50 border-red-300'
+              }`}
+            >
+              <div className="flex items-start gap-2 mb-2">
+                {isCorrect ? (
+                  <span className="text-green-600 font-bold">✓</span>
+                ) : (
+                  <span className="text-red-600 font-bold">✗</span>
+                )}
+                <p className="font-semibold text-[#001C3D]">{question.question}</p>
+              </div>
+              <div className="ml-6 space-y-1">
+                <p className={`text-sm ${isCorrect ? 'text-green-700' : 'text-red-700'}`}>
+                  Your answer: {question.options[userAnswer]}
+                </p>
+                {!isCorrect && (
+                  <p className="text-sm text-green-700 font-medium">
+                    Correct answer: {question.options[question.correctAnswer]}
+                  </p>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Actions */}
+      <div className="flex gap-4 justify-end">
+        <button
+          onClick={onRetake}
+          className="bg-gradient-to-r from-[#9448B0] to-[#332277] text-white font-semibold py-3 px-6 rounded-lg shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300"
+        >
+          Retake Quiz
+        </button>
+        <button
+          onClick={onClose}
+          className="bg-slate-200 text-slate-700 font-semibold py-3 px-6 rounded-lg shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300"
+        >
+          Close
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function KnowYourPipettePage() {
   const { user, updateUserProfile } = useAuth();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -16,6 +212,11 @@ export default function KnowYourPipettePage() {
   const [showWelcomeScreen, setShowWelcomeScreen] = useState(false);
   const [showLearningPage, setShowLearningPage] = useState(false);
   const [activeTab, setActiveTab] = useState('Pipette');
+  // Quiz state
+  const [showQuiz, setShowQuiz] = useState(false);
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [quizAnswers, setQuizAnswers] = useState<number[]>([]);
+  const [showQuizResults, setShowQuizResults] = useState(false);
   const [debugInfo, setDebugInfo] = useState({
     cameraPosition: { x: 0, y: 0, z: 0 },
     modelPosition: { x: 0, y: 0, z: 0 },
@@ -719,7 +920,7 @@ export default function KnowYourPipettePage() {
         <div className="bg-white/10 backdrop-blur-sm border-b border-white/20">
           <div className="container mx-auto px-4 py-2">
             <div className="flex space-x-2 overflow-x-auto">
-              {['Pipette', 'Tip', 'Box', 'Source Beaker', 'Destination Beaker', 'Waste Box'].map((item) => (
+              {['Pipette', 'Tip', 'Box', 'Source Beaker', 'Destination Beaker', 'Waste Box', 'Why Pipettes Matter'].map((item) => (
                 <button
                   key={item}
                   onClick={() => setActiveTab(item)}
@@ -860,36 +1061,171 @@ export default function KnowYourPipettePage() {
               </div>
             )}
 
+            {activeTab === 'Why Pipettes Matter' && (
+              <div>
+                <h2 className="text-3xl font-bold text-[#001C3D] mb-6">Why Pipettes Matter</h2>
+                <div className="space-y-6">
+                  <div className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg p-6 border-2 border-blue-200">
+                    <h3 className="text-2xl font-semibold text-[#001C3D] mb-4">Essential Tool in Laboratory Research</h3>
+                    <p className="text-gray-700 text-lg leading-relaxed mb-4">
+                      Pipettes are fundamental instruments in virtually every laboratory setting, from academic research 
+                      to pharmaceutical development, clinical diagnostics, and biotechnology. They enable scientists to 
+                      work with microscopic volumes of liquids—often as small as 0.1 microliters—with remarkable precision 
+                      and accuracy.
+                    </p>
+                    <p className="text-gray-700 text-lg leading-relaxed">
+                      Without pipettes, modern scientific research would be impossible. They are used in DNA sequencing, 
+                      protein analysis, drug discovery, vaccine development, and countless other applications that require 
+                      exact volume measurements.
+                    </p>
+                  </div>
+
+                  <div className="bg-gradient-to-r from-green-50 to-teal-50 rounded-lg p-6 border-2 border-green-200">
+                    <h3 className="text-2xl font-semibold text-[#001C3D] mb-4">Why Mastery is Critical</h3>
+                    <ul className="space-y-3 text-gray-700 text-lg leading-relaxed">
+                      <li className="flex items-start gap-3">
+                        <span className="text-green-600 font-bold mt-1">✓</span>
+                        <span><strong>Accuracy & Reproducibility:</strong> Proper pipetting technique ensures that experiments 
+                        can be replicated and results are reliable. Even small errors can compound and lead to incorrect 
+                        conclusions in research.</span>
+                      </li>
+                      <li className="flex items-start gap-3">
+                        <span className="text-green-600 font-bold mt-1">✓</span>
+                        <span><strong>Cost Efficiency:</strong> Many reagents and samples are extremely expensive. Accurate 
+                        pipetting prevents waste and reduces costs in high-throughput laboratories.</span>
+                      </li>
+                      <li className="flex items-start gap-3">
+                        <span className="text-green-600 font-bold mt-1">✓</span>
+                        <span><strong>Contamination Prevention:</strong> Mastering proper technique prevents cross-contamination 
+                        between samples, which is critical in sensitive applications like PCR, cell culture, and clinical 
+                        diagnostics.</span>
+                      </li>
+                      <li className="flex items-start gap-3">
+                        <span className="text-green-600 font-bold mt-1">✓</span>
+                        <span><strong>Career Advancement:</strong> Proficiency in pipetting is a fundamental skill expected 
+                        of all laboratory professionals. Mastery demonstrates attention to detail and technical competence 
+                        that employers value.</span>
+                      </li>
+                      <li className="flex items-start gap-3">
+                        <span className="text-green-600 font-bold mt-1">✓</span>
+                        <span><strong>Research Impact:</strong> Inaccurate pipetting can invalidate entire experiments, 
+                        wasting time, resources, and potentially delaying important scientific discoveries. Mastery ensures 
+                        your research contributes meaningfully to your field.</span>
+                      </li>
+                    </ul>
+                  </div>
+
+                  <div className="bg-slate-50 rounded-lg p-6 border-2 border-slate-300">
+                    <p className="text-gray-700 text-lg leading-relaxed italic">
+                      "The difference between good science and great science often lies in the mastery of fundamental 
+                      techniques like pipetting. Precision matters, and it starts with proper training and practice."
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Next/Finish Button */}
-            <div className="flex justify-end mt-8 pt-6 border-t border-gray-200">
-              {activeTab === 'Waste Box' ? (
-                <Link
-                  href="/home"
-                  className="bg-gradient-to-r from-[#22c55e] to-[#16a34a] text-white font-semibold py-3 px-8 rounded-lg shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300 flex items-center gap-2"
-                >
-                  <span>Finish</span>
-                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M5 12h14" />
-                    <path d="m12 5 7 7-7 7" />
-                  </svg>
-                </Link>
-              ) : (
+            <div className="flex justify-between items-center mt-8 pt-6 border-t border-gray-200">
+              {activeTab === 'Why Pipettes Matter' && !showQuiz && !showQuizResults && (
                 <button
-                  onClick={() => {
-                    const tabs = ['Pipette', 'Tip', 'Box', 'Source Beaker', 'Destination Beaker', 'Waste Box'];
-                    const currentIndex = tabs.indexOf(activeTab);
-                    const nextIndex = (currentIndex + 1) % tabs.length;
-                    setActiveTab(tabs[nextIndex]);
-                  }}
-                  className="bg-gradient-to-r from-[#9448B0] to-[#332277] text-white font-semibold py-3 px-8 rounded-lg shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300 flex items-center gap-2"
+                  onClick={() => setShowQuiz(true)}
+                  className="bg-gradient-to-r from-[#3b82f6] to-[#2563eb] text-white font-semibold py-3 px-6 rounded-lg shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300 flex items-center gap-2"
                 >
-                  <span>Next</span>
+                  <span>Take Optional Quiz</span>
                   <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="m9 18 6-6-6-6" />
+                    <path d="M9 11a3 3 0 1 0 6 0 3 3 0 0 0-6 0" />
+                    <path d="M17.657 16.657 13.414 20.9a1.998 1.998 0 0 1-2.827 0l-4.244-4.243a8 8 0 1 1 11.314 0z" />
+                    <path d="M15 11a3 3 0 1 1-6 0 3 3 0 0 1 6 0z" />
                   </svg>
                 </button>
               )}
+              <div className="ml-auto">
+                {activeTab === 'Why Pipettes Matter' && !showQuiz && !showQuizResults ? (
+                  <Link
+                    href="/home"
+                    className="bg-gradient-to-r from-[#22c55e] to-[#16a34a] text-white font-semibold py-3 px-8 rounded-lg shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300 flex items-center gap-2"
+                  >
+                    <span>Finish</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M5 12h14" />
+                      <path d="m12 5 7 7-7 7" />
+                    </svg>
+                  </Link>
+                ) : activeTab === 'Waste Box' && !showQuiz && !showQuizResults ? (
+                  <button
+                    onClick={() => setActiveTab('Why Pipettes Matter')}
+                    className="bg-gradient-to-r from-[#9448B0] to-[#332277] text-white font-semibold py-3 px-8 rounded-lg shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300 flex items-center gap-2"
+                  >
+                    <span>Next</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="m9 18 6-6-6-6" />
+                    </svg>
+                  </button>
+                ) : !showQuiz && !showQuizResults ? (
+                  <button
+                    onClick={() => {
+                      const tabs = ['Pipette', 'Tip', 'Box', 'Source Beaker', 'Destination Beaker', 'Waste Box', 'Why Pipettes Matter'];
+                      const currentIndex = tabs.indexOf(activeTab);
+                      const nextIndex = (currentIndex + 1) % tabs.length;
+                      setActiveTab(tabs[nextIndex]);
+                    }}
+                    className="bg-gradient-to-r from-[#9448B0] to-[#332277] text-white font-semibold py-3 px-8 rounded-lg shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300 flex items-center gap-2"
+                  >
+                    <span>Next</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="m9 18 6-6-6-6" />
+                    </svg>
+                  </button>
+                ) : null}
+              </div>
             </div>
+
+            {/* Quiz Section */}
+            {showQuiz && !showQuizResults && (
+              <div className="mt-8 pt-6 border-t border-gray-200">
+                <QuizComponent
+                  currentQuestionIndex={currentQuestionIndex}
+                  onAnswer={(answerIndex: number) => {
+                    const newAnswers = [...quizAnswers];
+                    newAnswers[currentQuestionIndex] = answerIndex;
+                    setQuizAnswers(newAnswers);
+                    
+                    if (currentQuestionIndex < quizQuestions.length - 1) {
+                      setCurrentQuestionIndex(currentQuestionIndex + 1);
+                    } else {
+                      setShowQuizResults(true);
+                    }
+                  }}
+                  onSkip={() => {
+                    setShowQuiz(false);
+                    setCurrentQuestionIndex(0);
+                    setQuizAnswers([]);
+                  }}
+                />
+              </div>
+            )}
+
+            {/* Quiz Results */}
+            {showQuizResults && (
+              <div className="mt-8 pt-6 border-t border-gray-200">
+                <QuizResults
+                  answers={quizAnswers}
+                  onClose={() => {
+                    setShowQuiz(false);
+                    setShowQuizResults(false);
+                    setCurrentQuestionIndex(0);
+                    setQuizAnswers([]);
+                  }}
+                  onRetake={() => {
+                    setShowQuiz(true);
+                    setShowQuizResults(false);
+                    setCurrentQuestionIndex(0);
+                    setQuizAnswers([]);
+                  }}
+                />
+              </div>
+            )}
           </div>
         </div>
       </div>

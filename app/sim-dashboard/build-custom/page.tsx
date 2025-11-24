@@ -2,8 +2,9 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import DashboardLayout from '../../../components/DashboardLayout';
-import { useAuth } from '../../../contexts/AuthContext';
+import DashboardLayout from '../../components/DashboardLayout';
+import { useAuth } from '../../contexts/AuthContext';
+import { SimulatorActionType } from '../../types/simulation';
 
 type ExperimentType = 'titration' | 'pipetting' | 'dilution' | 'mixing' | 'other';
 
