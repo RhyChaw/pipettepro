@@ -53,6 +53,7 @@ const OptionCard: React.FC<{
 
 
 const QuizScreen: React.FC<QuizScreenProps> = ({ category, difficulty, onQuizComplete }) => {
+  const router = useRouter();
   const [questions, setQuestions] = useState<Question[]>([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [selectedAnswer, setSelectedAnswer] = useState<'A' | 'B' | null>(null);
@@ -105,6 +106,17 @@ const QuizScreen: React.FC<QuizScreenProps> = ({ category, difficulty, onQuizCom
 
   return (
     <div className="w-full max-w-5xl mx-auto p-4 md:p-8">
+      <div className="mb-4">
+        <button
+          onClick={() => router.push('/quiz')}
+          className="flex items-center gap-2 text-slate-700 hover:text-slate-900 font-medium transition-colors"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+          Back to Quiz Home
+        </button>
+      </div>
       <div className="bg-white rounded-xl shadow-lg p-6 md:p-8">
         {/* Progress Bar */}
         <div className="mb-6">
@@ -118,7 +130,10 @@ const QuizScreen: React.FC<QuizScreenProps> = ({ category, difficulty, onQuizCom
         </div>
 
         {/* Question */}
-        <h2 className="text-2xl md:text-3xl font-bold text-slate-800 text-center mb-8">{question.questionText}</h2>
+        <div className="flex items-center justify-center gap-3 mb-8">
+          <h2 className="text-2xl md:text-3xl font-bold text-slate-800 text-center flex-1">{question.questionText}</h2>
+          <AudioPlayer text={question.questionText} size="md" />
+        </div>
         
         {/* Options */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
@@ -137,7 +152,10 @@ const QuizScreen: React.FC<QuizScreenProps> = ({ category, difficulty, onQuizCom
         {/* Feedback and Actions */}
         {isAnswerRevealed && (
           <div className="bg-slate-100 rounded-lg p-4 my-6 text-slate-700 animate-fade-in">
-            <h4 className="font-bold text-lg mb-2">Explanation</h4>
+            <div className="flex items-start gap-2 mb-2">
+              <h4 className="font-bold text-lg">Explanation</h4>
+              <AudioPlayer text={question.explanation} size="sm" />
+            </div>
             <p>{question.explanation}</p>
           </div>
         )}

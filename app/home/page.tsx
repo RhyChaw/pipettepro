@@ -47,8 +47,8 @@ export default function HomePage() {
         setCompletedSteps(completed);
         // Sync to localStorage
         localStorage.setItem(`roadmap_${user.email}`, JSON.stringify(userProfile.roadmapProgress));
-        // Show mascot in corner if step 5 is completed
-        if (completed.has(5)) {
+        // Show mascot in corner if all steps are completed
+        if (completed.has(2) && completed.has(3) && completed.has(4)) {
           setMascotInCorner(true);
         }
       } else {
@@ -74,11 +74,9 @@ export default function HomePage() {
   useEffect(() => {
     if (!user?.email || !userProfile) return;
     
-    const allStepsDone = completedSteps.has(1) && 
-                        completedSteps.has(2) && 
+    const allStepsDone = completedSteps.has(2) && 
                         completedSteps.has(3) && 
-                        completedSteps.has(4) && 
-                        completedSteps.has(5);
+                        completedSteps.has(4);
     
     // Only mark onboarding as done if all steps are completed and it's not already marked
     if (allStepsDone && !userProfile.onboardingCompleted) {
@@ -153,7 +151,7 @@ export default function HomePage() {
     {
       title: 'Start Simulation',
       description: 'Practice pipetting techniques in a realistic 3D lab environment',
-      href: '/simulator',
+      href: '/sim-dashboard',
       icon: (
         <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
@@ -219,12 +217,10 @@ export default function HomePage() {
     },
   ];
 
-  // Check if all roadmap steps are completed (steps 1-5)
-  const allStepsCompleted = completedSteps.has(1) && 
-                            completedSteps.has(2) && 
+  // Check if all roadmap steps are completed (steps 2-4)
+  const allStepsCompleted = completedSteps.has(2) && 
                             completedSteps.has(3) && 
-                            completedSteps.has(4) && 
-                            completedSteps.has(5);
+                            completedSteps.has(4);
 
   return (
     <DashboardLayout>
@@ -251,7 +247,7 @@ export default function HomePage() {
                   return (
                     <button
                       key={idx}
-                      onClick={() => setShowSimulationModal(true)}
+                      onClick={() => router.push('/sim-dashboard')}
                       className={`group block p-6 rounded-lg border-2 transition-all duration-200 text-left w-full ${
                         action.primary
                           ? 'bg-slate-900 border-slate-900 text-white hover:bg-slate-800 hover:border-slate-800'
@@ -356,7 +352,7 @@ export default function HomePage() {
         }`}>
           <div className="flex items-center justify-between mb-4">
             <h2 className={`font-semibold text-slate-900 ${allStepsCompleted ? 'text-xl' : 'text-2xl'}`}>
-              Your Learning Roadmap
+              Your Onboarding Roadmap
             </h2>
             {allStepsCompleted && (
               <button
@@ -387,10 +383,8 @@ export default function HomePage() {
             {/* Roadmap Steps */}
             <div className="lg:col-span-2 relative">
             {[
-              { id: 1, title: 'Onboarding', route: null },
               { id: 2, title: 'Know your tools', route: '/know-your-pipette', canSkip: userProfile?.canSkipKnowTools },
-              { id: 5, title: 'Explore the app', route: null },
-              { id: 3, title: 'Understanding the simulation', route: '/simulator' },
+              { id: 3, title: 'Understanding the simulation', route: '/sim-dashboard' },
               { id: 4, title: 'A basic quiz', route: '/quiz' },
             ].map((step, index, array) => {
               const isLast = index === array.length - 1;
@@ -474,46 +468,6 @@ export default function HomePage() {
                             </h3>
                           </Link>
                         )
-                      ) : step.id === 1 ? (
-                        <button
-                          onClick={() => {
-                            if (!stepCompleted && !isDisabled) {
-                              setShowOnboardingModal(true);
-                            }
-                          }}
-                          disabled={isDisabled}
-                          className={`block w-full text-left p-4 rounded-lg border-2 transition-all duration-200 ${
-                            stepCompleted
-                              ? 'bg-slate-50 border-slate-200 text-slate-500 cursor-default'
-                              : isDisabled
-                              ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed opacity-50'
-                              : 'bg-white border-slate-300 text-slate-900 hover:border-blue-500 hover:shadow-md cursor-pointer'
-                          }`}
-                        >
-                          <h3 className={`font-semibold text-lg ${stepCompleted ? 'text-slate-500' : isDisabled ? 'text-slate-400' : 'text-slate-900'}`}>
-                            {step.title}
-                          </h3>
-                        </button>
-                      ) : step.id === 5 ? (
-                        <button
-                          onClick={() => {
-                            if (!stepCompleted && !isDisabled) {
-                              setShowExploreAppModal(true);
-                            }
-                          }}
-                          disabled={isDisabled}
-                          className={`block w-full text-left p-4 rounded-lg border-2 transition-all duration-200 ${
-                            stepCompleted
-                              ? 'bg-slate-50 border-slate-200 text-slate-500 cursor-default'
-                              : isDisabled
-                              ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed opacity-50'
-                              : 'bg-white border-slate-300 text-slate-900 hover:border-blue-500 hover:shadow-md cursor-pointer'
-                          }`}
-                        >
-                          <h3 className={`font-semibold text-lg ${stepCompleted ? 'text-slate-500' : isDisabled ? 'text-slate-400' : 'text-slate-900'}`}>
-                            {step.title}
-                          </h3>
-                        </button>
                       ) : (
                         <div
                           className={`p-4 rounded-lg border-2 ${
@@ -571,7 +525,7 @@ export default function HomePage() {
                   return (
                     <button
                       key={idx}
-                      onClick={() => setShowSimulationModal(true)}
+                      onClick={() => router.push('/sim-dashboard')}
                       className={`group block p-6 rounded-lg border-2 transition-all duration-200 text-left w-full ${
                         action.primary
                           ? 'bg-slate-900 border-slate-900 text-white hover:bg-slate-800 hover:border-slate-800'
@@ -876,12 +830,10 @@ export default function HomePage() {
                     });
                     setCompletedSteps(completed);
                     
-                    // Check if all 5 steps are now completed
-                    const allStepsDone = completed.has(1) && 
-                                       completed.has(2) && 
+                    // Check if all steps are now completed
+                    const allStepsDone = completed.has(2) && 
                                        completed.has(3) && 
-                                       completed.has(4) && 
-                                       completed.has(5);
+                                       completed.has(4);
                     
                     // If all steps are done, mark onboarding as completed and level up
                     if (allStepsDone) {

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import DashboardLayout from '../components/DashboardLayout';
 import { useAuth } from '../contexts/AuthContext';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -9,7 +10,8 @@ import { storage, db } from '../utils/firebaseConfig';
 import ImageCropper from '../components/ImageCropper';
 
 export default function ProfilePage() {
-  const { user, userProfile, updateUserProfile, loading } = useAuth();
+  const { user, userProfile, updateUserProfile, loading, logOut } = useAuth();
+  const router = useRouter();
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
   const [uploadSuccess, setUploadSuccess] = useState(false);
@@ -123,6 +125,15 @@ export default function ProfilePage() {
 
   const handleImageClick = () => {
     fileInputRef.current?.click();
+  };
+
+  const handleSignOut = async () => {
+    try {
+      await logOut();
+      router.push('/login');
+    } catch (error) {
+      console.error('Error signing out:', error);
+    }
   };
 
   if (loading) {
@@ -340,6 +351,17 @@ export default function ProfilePage() {
               Note: HEIC/HEIF files are not supported. Please convert to JPEG or PNG first.
             </span>
           </p>
+        </div>
+
+        {/* Sign Out Section */}
+        <div className="bg-white rounded-xl p-8 shadow-md border border-slate-200">
+          <h2 className="text-3xl font-bold text-slate-900 mb-6">Account</h2>
+          <button
+            onClick={handleSignOut}
+            className="px-6 py-3 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition-colors text-lg"
+          >
+            Sign Out
+          </button>
         </div>
       </div>
 

@@ -749,7 +749,13 @@ export default function KnowYourPipettePage() {
                     It consists of a body, plunger with two stops, volume adjustment dial, and a tip ejector. 
                     Different pipettes are designed for specific volume ranges (e.g., 2µL, 10µL, 200µL, 1000µL).
                   </p>
-                  {/* Placeholder for images/models - add here later */}
+                  <div className="flex justify-center my-6">
+                    <img 
+                      src="/know_your_tools/pipette.png" 
+                      alt="Pipette" 
+                      className="max-w-full h-auto rounded-lg shadow-lg"
+                    />
+                  </div>
                 </div>
               </div>
             )}
@@ -763,7 +769,13 @@ export default function KnowYourPipettePage() {
                     standard tips for general use, low-retention tips for viscous liquids, and filter tips for 
                     sensitive applications. Always use a fresh tip for each sample to ensure accuracy and prevent cross-contamination.
                   </p>
-                  {/* Placeholder for images/models - add here later */}
+                  <div className="flex justify-center my-6">
+                    <img 
+                      src="/know_your_tools/tips.png" 
+                      alt="Tip" 
+                      className="max-w-full h-auto rounded-lg shadow-lg"
+                    />
+                  </div>
                 </div>
               </div>
             )}
@@ -777,7 +789,13 @@ export default function KnowYourPipettePage() {
                     sizes and are designed to maintain sterility. Tips should be loaded into the pipette directly from 
                     the box without touching them to maintain aseptic technique.
                   </p>
-                  {/* Placeholder for images/models - add here later */}
+                  <div className="flex justify-center my-6">
+                    <img 
+                      src="/know_your_tools/box.png" 
+                      alt="Box" 
+                      className="max-w-full h-auto rounded-lg shadow-lg"
+                    />
+                  </div>
                 </div>
               </div>
             )}
@@ -791,7 +809,13 @@ export default function KnowYourPipettePage() {
                     microcentrifuge tube, or any container with the liquid sample. When aspirating, immerse the 
                     tip just below the liquid surface (2-3mm) to ensure accurate volume measurement.
                   </p>
-                  {/* Placeholder for images/models - add here later */}
+                  <div className="flex justify-center my-6">
+                    <img 
+                      src="/know_your_tools/Source.png" 
+                      alt="Source Beaker" 
+                      className="max-w-full h-auto rounded-lg shadow-lg"
+                    />
+                  </div>
                 </div>
               </div>
             )}
@@ -805,7 +829,13 @@ export default function KnowYourPipettePage() {
                     for the volume being transferred. When dispensing, touch the tip to the inner wall of the 
                     container and use the blow-out function (second stop) to ensure all liquid is expelled.
                   </p>
-                  {/* Placeholder for images/models - add here later */}
+                  <div className="flex justify-center my-6">
+                    <img 
+                      src="/know_your_tools/Destination.png" 
+                      alt="Destination Beaker" 
+                      className="max-w-full h-auto rounded-lg shadow-lg"
+                    />
+                  </div>
                 </div>
               </div>
             )}
@@ -819,10 +849,47 @@ export default function KnowYourPipettePage() {
                     and positioned conveniently near your workspace. Always eject tips into the waste container 
                     immediately after use to prevent contamination and maintain a clean work environment.
                   </p>
-                  {/* Placeholder for images/models - add here later */}
+                  <div className="flex justify-center my-6">
+                    <img 
+                      src="/know_your_tools/Waste.png" 
+                      alt="Waste Box" 
+                      className="max-w-full h-auto rounded-lg shadow-lg"
+                    />
+                  </div>
                 </div>
               </div>
             )}
+
+            {/* Next/Finish Button */}
+            <div className="flex justify-end mt-8 pt-6 border-t border-gray-200">
+              {activeTab === 'Waste Box' ? (
+                <Link
+                  href="/home"
+                  className="bg-gradient-to-r from-[#22c55e] to-[#16a34a] text-white font-semibold py-3 px-8 rounded-lg shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300 flex items-center gap-2"
+                >
+                  <span>Finish</span>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M5 12h14" />
+                    <path d="m12 5 7 7-7 7" />
+                  </svg>
+                </Link>
+              ) : (
+                <button
+                  onClick={() => {
+                    const tabs = ['Pipette', 'Tip', 'Box', 'Source Beaker', 'Destination Beaker', 'Waste Box'];
+                    const currentIndex = tabs.indexOf(activeTab);
+                    const nextIndex = (currentIndex + 1) % tabs.length;
+                    setActiveTab(tabs[nextIndex]);
+                  }}
+                  className="bg-gradient-to-r from-[#9448B0] to-[#332277] text-white font-semibold py-3 px-8 rounded-lg shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300 flex items-center gap-2"
+                >
+                  <span>Next</span>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="m9 18 6-6-6-6" />
+                  </svg>
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>

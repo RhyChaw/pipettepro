@@ -9,6 +9,7 @@ interface ResultsScreenProps {
 }
 
 const ResultsScreen: React.FC<ResultsScreenProps> = ({ results, onNewQuiz }) => {
+  const router = useRouter();
   const [reviewing, setReviewing] = useState(false);
   const correctAnswers = results.filter(r => r.isCorrect).length;
   const totalQuestions = results.length;
@@ -44,6 +45,17 @@ const ResultsScreen: React.FC<ResultsScreenProps> = ({ results, onNewQuiz }) => 
 
   return (
     <div className="w-full max-w-2xl mx-auto p-4 md:p-8 text-center">
+      <div className="mb-4 text-left">
+        <button
+          onClick={() => router.push('/quiz')}
+          className="flex items-center gap-2 text-slate-700 hover:text-slate-900 font-medium transition-colors"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+          Back to Quiz Home
+        </button>
+      </div>
       <div className="bg-white rounded-xl shadow-lg p-8">
         <h2 className="text-3xl font-bold text-slate-700 mb-2">Quiz Complete!</h2>
         <p className="text-slate-500 mb-6">Here&apos;s how you performed.</p>

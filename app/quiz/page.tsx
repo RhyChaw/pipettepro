@@ -5,9 +5,12 @@ import { useRouter } from 'next/navigation';
 import DashboardLayout from '../components/DashboardLayout';
 import HomeScreen from './components/HomeScreenPage';
 import QuizScreen from './components/QuizScreen';
+import GeneratedQuizScreen, { GeneratedQuizResult } from './components/GeneratedQuizScreen';
+import GeneratedQuizResultsScreen from './components/GeneratedQuizResultsScreen';
 import ResultsScreen from './components/ResultsScreen';
 import { Category, Difficulty, QuizResult } from './types';
 import { useAuth } from '../contexts/AuthContext';
+import { GeneratedQuiz } from '../types/quiz';
 import Image from 'next/image';
 
 type QuizState = 'home' | 'quiz' | 'results';
@@ -20,6 +23,8 @@ export default function QuizPage() {
   const [selectedDifficulty, setSelectedDifficulty] = useState<Difficulty | null>(null);
   const [quizResults, setQuizResults] = useState<QuizResult[]>([]);
   const [showQuizWelcome, setShowQuizWelcome] = useState(false);
+  const [generatedQuiz, setGeneratedQuiz] = useState<GeneratedQuiz | null>(null);
+  const [generatedQuizResults, setGeneratedQuizResults] = useState<GeneratedQuizResult[]>([]);
 
   // Check if this is first time visiting quiz
   useEffect(() => {
@@ -36,6 +41,15 @@ export default function QuizPage() {
     setSelectedDifficulty(difficulty);
     setQuizState('quiz');
     setQuizResults([]);
+    setGeneratedQuiz(null);
+  };
+
+  const handleStartGeneratedQuiz = (quiz: GeneratedQuiz) => {
+    setGeneratedQuiz(quiz);
+    setSelectedCategory(null);
+    setSelectedDifficulty(null);
+    setQuizState('quiz');
+    setQuizResults([]);
   };
 
   const handleQuizWelcomeClose = async () => {
@@ -43,6 +57,11 @@ export default function QuizPage() {
       localStorage.setItem(`visited_quiz_${user.email}`, 'true');
       setShowQuizWelcome(false);
     }
+  };
+
+  const handleGeneratedQuizComplete = async (results: GeneratedQuizResult[]) => {
+    setGeneratedQuizResults(results);
+    setQuizState('results');
   };
 
   const handleQuizComplete = async (results: QuizResult[]) => {
@@ -124,6 +143,8 @@ export default function QuizPage() {
     setSelectedCategory(null);
     setSelectedDifficulty(null);
     setQuizResults([]);
+    setGeneratedQuiz(null);
+    setGeneratedQuizResults([]);
   };
 
   return (
@@ -187,16 +208,42 @@ export default function QuizPage() {
           </div>
         )}
 
-        {quizState === 'home' && <HomeScreen onStartQuiz={handleStartQuiz} userProfile={userProfile} />}
-        {quizState === 'quiz' && selectedCategory && selectedDifficulty && (
-          <QuizScreen
-            category={selectedCategory}
-            difficulty={selectedDifficulty}
-            onQuizComplete={handleQuizComplete}
+        {quizState === 'home' && (
+          <HomeScreen 
+            onStartQuiz={handleStartQuiz} 
+            userProfile={userProfile}
+            userId={user?.email || null}
+            onStartGeneratedQuiz={handleStartGeneratedQuiz}
           />
         )}
+        {quizState === 'quiz' && (
+          <>
+            {generatedQuiz ? (
+              <GeneratedQuizScreen
+                quiz={generatedQuiz}
+                onQuizComplete={handleGeneratedQuizComplete}
+              />
+            ) : selectedCategory && selectedDifficulty ? (
+              <QuizScreen
+                category={selectedCategory}
+                difficulty={selectedDifficulty}
+                onQuizComplete={handleQuizComplete}
+              />
+            ) : null}
+          </>
+        )}
         {quizState === 'results' && (
-          <ResultsScreen results={quizResults} onNewQuiz={handleNewQuiz} />
+          <>
+            {generatedQuiz && generatedQuizResults.length > 0 ? (
+              <GeneratedQuizResultsScreen
+                quiz={generatedQuiz}
+                results={generatedQuizResults}
+                onNewQuiz={handleNewQuiz}
+              />
+            ) : (
+              <ResultsScreen results={quizResults} onNewQuiz={handleNewQuiz} />
+            )}
+          </>
         )}
       </div>
     </DashboardLayout>

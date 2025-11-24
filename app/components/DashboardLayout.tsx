@@ -76,7 +76,9 @@ type TabType =
   | 'know-tools'
   | 'quiz'
   | 'challenge'
-  | 'leaderboard';
+  | 'leaderboard'
+  | 'notes'
+  | 'flashcards';
 
 type AssistantMessage = {
   role: 'assistant' | 'user';
@@ -115,18 +117,24 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     { id: 'dashboard' as TabType, name: 'Home', route: '/home' },
     { id: 'know-tools' as TabType, name: 'Know the tools', route: '/know-your-pipette' },
     { id: 'quiz' as TabType, name: 'Quiz', route: '/quiz' },
-    { id: 'simulation' as TabType, name: 'Simulation (practice anything)', route: '/simulator' },
+    { id: 'simulation' as TabType, name: 'Simulation (practice anything)', route: '/sim-dashboard' },
     { id: 'challenge' as TabType, name: 'Challenges', route: '/challenge' },
     { id: 'leaderboard' as TabType, name: 'Leaderboard', route: '/leaderboard' },
+    { id: 'notes' as TabType, name: 'Notes', route: '/notes' },
+    { id: 'flashcards' as TabType, name: 'Flashcards', route: '/flashcards' },
   ];
 
   const routeToTab: Record<string, TabType> = {
     '/home': 'dashboard',
     '/simulator': 'simulation',
+    '/sim-dashboard': 'simulation',
     '/know-your-pipette': 'know-tools',
     '/quiz': 'quiz',
     '/challenge': 'challenge',
     '/leaderboard': 'leaderboard',
+    '/notes': 'notes',
+    '/your-docs': 'notes', // Also highlight notes when on scan page
+    '/flashcards': 'flashcards',
   };
 
   const activeTab = routeToTab[pathname] || 'dashboard';

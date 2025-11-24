@@ -4,7 +4,10 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import TutorialOverlay from './TutorialOverlay';
+import TutorialStepsOverlay from './TutorialStepsOverlay';
+import InteractionTutorialOverlay from './InteractionTutorialOverlay';
 import { useAuth } from '../contexts/AuthContext';
 import { STICKY_NOTE_COLORS, StickyNote, StickyNoteColor } from '../constants/stickyNotes';
 
@@ -155,6 +158,36 @@ export default function PipetteSimulator() {
   const [noteError, setNoteError] = useState<string | null>(null);
   const [showPipettePalette, setShowPipettePalette] = useState(false);
 
+  // Load tutorial scenario when in tutorial mode
+  useEffect(() => {
+    const loadTutorialScenario = async () => {
+      try {
+        const response = await fetch('/api/scenarios/tutorial');
+        if (response.ok) {
+          const data = await response.json();
+          setTutorialScenario(data.scenario);
+          if (data.scenario.question) {
+            setCurrentTask(data.scenario.question);
+          }
+        }
+      } catch (error) {
+        console.error('Error loading tutorial scenario:', error);
+      }
+    };
+
+    // Check if we're in tutorial mode (from URL)
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      const isTutorial = urlParams.get('tutorial') === 'true' || urlParams.get('mode') === 'tutorial';
+      
+      if (isTutorial) {
+        setIsTutorialMode(true);
+        setShowMascotWelcome(true);
+        loadTutorialScenario();
+      }
+    }
+  }, []);
+
   // Listen for tutorial button click from DashboardLayout
   useEffect(() => {
     const handleShowTutorial = () => {
@@ -195,6 +228,15 @@ export default function PipetteSimulator() {
   const [showConfetti, setShowConfetti] = useState(false);
   const [contextualQuizAnswer, setContextualQuizAnswer] = useState<number | null>(null);
   const [currentTask, setCurrentTask] = useState<string>('Select the correct pipette for your target volume and attach a tip.');
+  const [tutorialScenario, setTutorialScenario] = useState<any>(null);
+  const [showMascotWelcome, setShowMascotWelcome] = useState(false);
+  const [isTutorialMode, setIsTutorialMode] = useState(false);
+  const [showTutorialSteps, setShowTutorialSteps] = useState(false);
+  const [currentTutorialStep, setCurrentTutorialStep] = useState(0);
+  const [tutorialSubStep, setTutorialSubStep] = useState<'click-button' | 'select-pipette'>('click-button');
+  // Second tutorial for interaction (starts after "Begin Pipetting")
+  const [showInteractionTutorial, setShowInteractionTutorial] = useState(false);
+  const [currentInteractionStep, setCurrentInteractionStep] = useState(0);
 
   // Auto-clear feedback console after 5 seconds
   useEffect(() => {
@@ -210,6 +252,7 @@ export default function PipetteSimulator() {
     scene: THREE.Scene;
     camera: THREE.PerspectiveCamera;
     renderer: THREE.WebGLRenderer;
+    labelRenderer: CSS2DRenderer;
     pipetteGroup: THREE.Group;
     plungerMesh: THREE.Mesh;
     pipetteTipMesh: PipetteTipMesh;
@@ -225,6 +268,13 @@ export default function PipetteSimulator() {
     intersectPlane: THREE.Plane;
     isPointerDown: boolean;
     liquidAnimation: { mesh: THREE.Mesh; targetScaleY: number; speed: number } | null;
+    labels: {
+      source: CSS2DObject | null;
+      destination: CSS2DObject | null;
+      pipette: CSS2DObject | null;
+      tipsBox: CSS2DObject | null;
+      waste: CSS2DObject | null;
+    };
   } | null>(null);
 
   useEffect(() => {
@@ -253,6 +303,15 @@ export default function PipetteSimulator() {
     renderer.shadowMap.enabled = true;
     labContainer.appendChild(renderer.domElement);
 
+    // Create CSS2DRenderer for 3D labels
+    const labelRenderer = new CSS2DRenderer();
+    labelRenderer.setSize(width, height);
+    labelRenderer.domElement.style.position = 'absolute';
+    labelRenderer.domElement.style.top = '0';
+    labelRenderer.domElement.style.left = '0';
+    labelRenderer.domElement.style.pointerEvents = 'none';
+    labContainer.appendChild(labelRenderer.domElement);
+
     // Lighting
     scene.add(new THREE.AmbientLight(0xffffff, 0.7));
     const directionalLight = new THREE.DirectionalLight(0xffffff, 0.9);
@@ -276,85 +335,69 @@ export default function PipetteSimulator() {
     scene.add(topLight);
     scene.add(topLight.target);
 
-    // Load chemistry lab table GLB model
-    const loader = new GLTFLoader();
-    let labTable: THREE.Group | null = null;
-    let tableTopY = 0.2; // Default table top height (will be updated after loading)
+    // Create a simple grey table using Three.js primitives
+    const tableTopY = 3.7; // Table top surface height
     
     // Store references to objects that need to be repositioned after table loads
     const objectsToReposition: Array<{ obj: THREE.Object3D; originalY: number }> = [];
     
-    // Create intersect plane (will be updated after table loads)
+    // Create intersect plane
     const intersectPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -tableTopY);
     
-    loader.load(
-      '/chemistry_lab_table.glb',
-      (gltf) => {
-        labTable = gltf.scene;
-        
-        // Calculate bounding box to determine table dimensions
-        const box = new THREE.Box3().setFromObject(labTable);
-        const size = box.getSize(new THREE.Vector3());
-        const center = box.getCenter(new THREE.Vector3());
-        
-        // Scale table to 3x size
-        const scaleFactor = 3;
-        labTable.scale.set(scaleFactor, scaleFactor, scaleFactor);
-        
-        // Recalculate bounding box after scaling
-        const scaledBox = new THREE.Box3().setFromObject(labTable);
-        const scaledSize = scaledBox.getSize(new THREE.Vector3());
-        const scaledCenter = scaledBox.getCenter(new THREE.Vector3());
-        
-        // Position table so its top surface is at y = 0.2 + 3.5 = 3.7 (moved up by 3.5 units total: 2.5 + 1.5 - 0.5)
-        // We'll assume the table's top is at the top of its bounding box
-        labTable.position.set(0, 0.2 + 3.5 - (scaledBox.max.y - scaledCenter.y), 0);
-        
-        // Update table top Y position for positioning other objects
-        tableTopY = scaledBox.max.y;
-        
-        // Reposition all objects that should be on top of the table
-        objectsToReposition.forEach(({ obj, originalY }) => {
-          // Position objects directly on the table surface
-          if (obj !== wasteBin) {
-            obj.position.y = tableTopY;
-          } else {
-            // For waste bin, update its position if it has already loaded
-            // The bin's position will be set in its GLB loader callback
-            // But we need to update z position to match beakers' z position
-            if (obj.position.z !== undefined) {
-              // Keep the z position but ensure y is correct
-              // The y will be set when the GLB loads
-            }
-          }
-        });
-        
-        // Update intersect plane
-        intersectPlane.constant = -tableTopY;
-        
-        // Enable shadows
-        labTable.traverse((child) => {
-          if (child instanceof THREE.Mesh) {
-            child.castShadow = true;
-            child.receiveShadow = true;
-          }
-        });
-        
-        scene.add(labTable);
-      },
-      undefined,
-      (error) => {
-        console.error('Error loading lab table:', error);
-        // Fallback to simple bench if GLB fails to load
-        const benchGeo = new THREE.BoxGeometry(15, 0.2, 8);
-        const benchMat = new THREE.MeshStandardMaterial({ color: 0xcccccc, roughness: 0.4, metalness: 0.1 });
-        const labBench = new THREE.Mesh(benchGeo, benchMat);
-        labBench.receiveShadow = true;
-        scene.add(labBench);
-        tableTopY = 0.2;
-        // No need to reposition objects if using fallback bench
+    // Create table group
+    const labTable = new THREE.Group();
+    
+    // Table top - large flat surface
+    const tableTopGeo = new THREE.BoxGeometry(15, 0.2, 8);
+    const tableTopMat = new THREE.MeshStandardMaterial({ 
+      color: 0x808080, // Grey color
+      roughness: 0.6, 
+      metalness: 0.1 
+    });
+    const tableTop = new THREE.Mesh(tableTopGeo, tableTopMat);
+    tableTop.position.y = tableTopY;
+    tableTop.castShadow = true;
+    tableTop.receiveShadow = true;
+    labTable.add(tableTop);
+    
+    // Table legs - 4 legs at the corners
+    const legGeo = new THREE.BoxGeometry(0.3, 3.5, 0.3);
+    const legMat = new THREE.MeshStandardMaterial({ 
+      color: 0x666666, // Darker grey for legs
+      roughness: 0.5, 
+      metalness: 0.1 
+    });
+    
+    const legPositions = [
+      { x: -7, z: -3.5 },
+      { x: 7, z: -3.5 },
+      { x: -7, z: 3.5 },
+      { x: 7, z: 3.5 },
+    ];
+    
+    legPositions.forEach((pos) => {
+      const leg = new THREE.Mesh(legGeo, legMat);
+      leg.position.set(pos.x, tableTopY - 1.85, pos.z); // Position legs below table top
+      leg.castShadow = true;
+      leg.receiveShadow = true;
+      labTable.add(leg);
+    });
+    
+    // Add table to scene immediately
+    scene.add(labTable);
+    
+    // Reposition all objects that should be on top of the table
+    objectsToReposition.forEach(({ obj, originalY }) => {
+      // Position objects directly on the table surface
+      if (obj !== wasteBin) {
+        obj.position.y = tableTopY;
+      } else {
+        // For waste bin, update its position if it has already loaded
+        if (obj.position.z !== undefined) {
+          // Keep the z position but ensure y is correct
+        }
       }
-    );
+    });
 
     // Helper function to load beaker GLB and create container
     const createBeakerContainer = async (
@@ -467,27 +510,9 @@ export default function PipetteSimulator() {
       currentVolume: 0,
     };
     
-    // Load beakers
+    // Load beakers (labels will be added in the section below)
     let destContainer: Container = placeholderContainer;
     let sourceContainer: Container = placeholderContainer;
-    
-    createBeakerContainer(-4, 0, 0.2, 0x60a5fa).then((container) => {
-      destContainer = container;
-      scene.add(container.group);
-      // Update sceneRef when container is loaded
-      if (sceneRef.current) {
-        sceneRef.current.destContainer = container;
-      }
-    });
-    
-    createBeakerContainer(4, 0, 0.9, 0x001c3d).then((container) => {
-      sourceContainer = container;
-      scene.add(container.group);
-      // Update sceneRef when container is loaded
-      if (sceneRef.current) {
-        sceneRef.current.sourceContainer = container;
-      }
-    });
 
     // Create tip boxes
     const tipBoxes: Record<string, THREE.Group> = {};
@@ -532,65 +557,25 @@ export default function PipetteSimulator() {
       scene.add(tipBoxGroup);
     });
 
-    // Load waste bin GLB - position it in the middle but backwards
+    // Create waste bin as a red box - position it in the middle but backwards
     const binGroup = new THREE.Group();
     const initialY = tableTopY;
     // Position in the middle (x = 0) and move back (increase z)
     // Beakers are at z = 0 + 1 - 0.5 = 0.5, so move dustbin back by adding to z
     const adjustedX = 0; // Middle
     const adjustedZ = 0.5 + 2.5; // Move back 2.5 units from beakers (z = 3.0)
+    
+    // Create red box for waste bin
+    const binGeo = new THREE.BoxGeometry(1.0, 1.2, 1.0);
+    const binMat = new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.6 });
+    const binMesh = new THREE.Mesh(binGeo, binMat);
+    binMesh.position.y = 0.6; // Half height above table
+    binMesh.castShadow = true;
+    binMesh.receiveShadow = true;
+    binGroup.add(binMesh);
+    
     binGroup.position.set(adjustedX, initialY, adjustedZ);
     objectsToReposition.push({ obj: binGroup, originalY: initialY });
-    
-    const binLoader = new GLTFLoader();
-    binLoader.load(
-      '/dustbin.glb',
-      (gltf) => {
-        const binModel = gltf.scene.clone();
-        
-        // Calculate bounding box to scale appropriately
-        const box = new THREE.Box3().setFromObject(binModel);
-        const size = box.getSize(new THREE.Vector3());
-        const maxDim = Math.max(size.x, size.y, size.z);
-        const targetSize = 1.0; // Target size for waste bin (doubled from 0.5)
-        const scale = targetSize / maxDim;
-        binModel.scale.set(scale, scale, scale);
-        
-        // Enable shadows
-        binModel.traverse((child) => {
-          if (child instanceof THREE.Mesh) {
-            child.castShadow = true;
-            child.receiveShadow = true;
-          }
-        });
-        
-        binGroup.add(binModel);
-        
-        // Calculate final bounding box after scaling
-        const boxAfterScale = new THREE.Box3().setFromObject(binModel);
-        const binHeight = boxAfterScale.max.y - boxAfterScale.min.y;
-        const binSize = boxAfterScale.getSize(new THREE.Vector3());
-        
-        // Move waste bin up so its bottom sits on the table
-        // The bin's local min.y is negative (below center), so we need to offset by that
-        binGroup.position.y = tableTopY - boxAfterScale.min.y;
-        
-        // Ensure z position is correct (should be 3.0 - middle but backwards)
-        binGroup.position.z = 0.5 + 2.5; // Same as calculated earlier
-      },
-      undefined,
-      (error) => {
-        console.error('Error loading waste bin:', error);
-        // Fallback to simple geometry
-        const binGeo = new THREE.CylinderGeometry(0.8, 0.7, 1.5, 16);
-        const binMat = new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.6 });
-        const binMesh = new THREE.Mesh(binGeo, binMat);
-        binMesh.position.y = 0.75;
-        binGroup.add(binMesh);
-        
-        // Text labels removed
-      }
-    );
     
     const wasteBin = binGroup;
     scene.add(wasteBin);
@@ -649,6 +634,8 @@ export default function PipetteSimulator() {
     pipetteGroup.add(bodyMesh, plungerMesh, ejectorMesh, shaftMesh, pipetteTipMesh);
     pipetteGroup.scale.set(0.9, 0.9, 0.9);
     pipetteGroup.position.y = 3;
+    // Set initial rotation to 75 degrees (so users can see it's wrong - should be 90 degrees)
+    pipetteGroup.rotation.z = (75 * Math.PI) / 180;
     pipetteGroup.castShadow = true;
     scene.add(pipetteGroup);
 
@@ -711,12 +698,83 @@ export default function PipetteSimulator() {
     const isPointerDown = false;
     const liquidAnimation: { mesh: THREE.Mesh; targetScaleY: number; speed: number } | null = null;
 
+    // Helper function to create 3D labels
+    const createLabel = (text: string): CSS2DObject => {
+      const labelDiv = document.createElement('div');
+      labelDiv.className = 'label';
+      labelDiv.textContent = text;
+      labelDiv.style.color = '#001c3d';
+      labelDiv.style.fontSize = '20px';
+      labelDiv.style.fontWeight = 'bold';
+      labelDiv.style.padding = '4px 8px';
+      labelDiv.style.backgroundColor = 'rgba(255, 255, 255, 0.9)';
+      labelDiv.style.border = '2px solid #001c3d';
+      labelDiv.style.borderRadius = '4px';
+      labelDiv.style.pointerEvents = 'none';
+      labelDiv.style.userSelect = 'none';
+      return new CSS2DObject(labelDiv);
+    };
+
+    // Create labels for each object
+    const sourceLabel = createLabel('Source');
+    const destLabel = createLabel('Destination');
+    const pipetteLabel = createLabel('Pipette');
+    const tipsBoxLabel = createLabel('Tips Box');
+    const wasteLabel = createLabel('Waste');
+
+    // Position labels above their objects
+    // Labels will be positioned after containers are loaded
+    const labels = {
+      source: sourceLabel,
+      destination: destLabel,
+      pipette: pipetteLabel,
+      tipsBox: tipsBoxLabel,
+      waste: wasteLabel,
+    };
+
+    // Add labels to scene (will be positioned dynamically)
+    pipetteGroup.add(pipetteLabel);
+    pipetteLabel.position.set(0, 1, 0);
+    wasteBin.add(wasteLabel);
+    wasteLabel.position.set(0, 0.8, 0);
+
+    // Position tip box label (will be updated when tip box is visible)
+    const activeTipBox = tipBoxes[gameState.selectedPipette?.id || 'p200'];
+    if (activeTipBox) {
+      activeTipBox.add(tipsBoxLabel);
+      tipsBoxLabel.position.set(0, 0.8, 0);
+    }
+
+    // Position source and destination labels after containers load
+    createBeakerContainer(-4, 0, 0.2, 0x60a5fa).then((container) => {
+      destContainer = container;
+      scene.add(container.group);
+      container.group.add(destLabel);
+      destLabel.position.set(0, 1.2, 0);
+      // Update sceneRef when container is loaded
+      if (sceneRef.current) {
+        sceneRef.current.destContainer = container;
+      }
+    });
+    
+    createBeakerContainer(4, 0, 0.9, 0x001c3d).then((container) => {
+      sourceContainer = container;
+      scene.add(container.group);
+      container.group.add(sourceLabel);
+      sourceLabel.position.set(0, 1.2, 0);
+      // Update sceneRef when container is loaded
+      if (sceneRef.current) {
+        sceneRef.current.sourceContainer = container;
+      }
+    });
+
     // Store refs for use in handlers
     // Note: sourceContainer and destContainer will be updated when GLB models load
     sceneRef.current = {
       scene,
       camera,
       renderer,
+      labelRenderer,
       pipetteGroup,
       plungerMesh,
       pipetteTipMesh: pipetteTipMesh as unknown as PipetteTipMesh,
@@ -732,6 +790,7 @@ export default function PipetteSimulator() {
       intersectPlane,
       isPointerDown,
       liquidAnimation,
+      labels,
     };
 
     // Animation loop
@@ -782,6 +841,10 @@ export default function PipetteSimulator() {
 
       // Update real-time feedback will be handled by checkInteraction outside
       renderer.render(scene, camera);
+      // Render labels
+      if (sceneRef.current?.labelRenderer) {
+        sceneRef.current.labelRenderer.render(scene, camera);
+      }
     };
 
     animate();
@@ -968,6 +1031,15 @@ export default function PipetteSimulator() {
     setPipetteSelectionFeedback('correct');
     setFeedbackConsole(`✅ CORRECT: ${pipette.name} selected!`);
     setShowConfetti(true);
+    
+    // If in tutorial step 2 and waiting for P200 selection, move to next step
+    if (showTutorialSteps && currentTutorialStep === 1 && tutorialSubStep === 'select-pipette' && pipette.id === 'p200') {
+      setTimeout(() => {
+        setCurrentTutorialStep(2);
+        setTutorialSubStep('click-button');
+      }, 1000);
+    }
+    
     setTimeout(() => {
       setShowConfetti(false);
       setPipetteSelectionFeedback(null);
@@ -1261,8 +1333,14 @@ export default function PipetteSimulator() {
 
   const movePipetteHorizontal = (deltaX: number, deltaZ: number) => {
     if (!sceneRef.current) return;
-    sceneRef.current.pipetteGroup.position.x += deltaX;
-    sceneRef.current.pipetteGroup.position.z += deltaZ;
+    const { pipetteGroup } = sceneRef.current;
+    // Only move X and Z, keep Y position unchanged
+    pipetteGroup.position.x += deltaX;
+    pipetteGroup.position.z += deltaZ;
+    // Ensure scale remains constant (no scaling based on position)
+    if (pipetteGroup.scale.x !== 0.9 || pipetteGroup.scale.y !== 0.9 || pipetteGroup.scale.z !== 0.9) {
+      pipetteGroup.scale.set(0.9, 0.9, 0.9);
+    }
   };
 
   const tiltPipette = (angleDelta: number) => {
@@ -1348,8 +1426,15 @@ export default function PipetteSimulator() {
       raycaster.setFromCamera(mouse, camera);
       const intersectPoint = new THREE.Vector3();
       raycaster.ray.intersectPlane(intersectPlane, intersectPoint);
+      // Only update X and Z positions, preserve Y position
+      const currentY = pipetteGroup.position.y;
       pipetteGroup.position.x = intersectPoint.x;
       pipetteGroup.position.z = intersectPoint.z;
+      pipetteGroup.position.y = currentY; // Keep Y unchanged
+      // Ensure scale remains constant
+      if (pipetteGroup.scale.x !== 0.9 || pipetteGroup.scale.y !== 0.9 || pipetteGroup.scale.z !== 0.9) {
+        pipetteGroup.scale.set(0.9, 0.9, 0.9);
+      }
     };
 
     const onPointerUp = () => {
@@ -1495,6 +1580,104 @@ export default function PipetteSimulator() {
 
   return (
     <div className="flex flex-row h-full bg-white relative" style={{ fontFamily: "'Montserrat', sans-serif" }}>
+      {/* Mascot Welcome Modal */}
+      {showMascotWelcome && tutorialScenario && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full p-8 relative animate-scale-in border-4 border-blue-200">
+            <button
+              onClick={() => setShowMascotWelcome(false)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 transition-colors"
+              aria-label="Close"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+            <div className="flex items-start gap-4 mb-6">
+              <img
+                src="/mascot_floating.png"
+                alt="PipettePal"
+                className="w-20 h-20 flex-shrink-0"
+              />
+              <div className="flex-1">
+                <h2 className="text-2xl font-bold text-slate-900 mb-3">Welcome to the Tutorial!</h2>
+                <p className="text-base text-slate-700 leading-relaxed whitespace-pre-wrap">
+                  {tutorialScenario.welcomeMessage}
+                </p>
+              </div>
+            </div>
+            <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
+              <h3 className="text-sm font-semibold text-slate-700 mb-2">Your Task:</h3>
+              <div className="text-sm text-slate-900 whitespace-pre-wrap leading-relaxed">
+                {tutorialScenario.question}
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                setShowMascotWelcome(false);
+                setShowTutorialSteps(true);
+                setCurrentTutorialStep(0);
+                setTutorialSubStep('click-button');
+              }}
+              className="mt-6 w-full px-6 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors"
+            >
+              Let's Begin!
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Interactive Tutorial Steps Overlay */}
+      {showTutorialSteps && (
+        <TutorialStepsOverlay
+          currentStep={currentTutorialStep}
+          subStep={tutorialSubStep}
+          onNext={() => {
+            if (currentTutorialStep < 6) {
+              setCurrentTutorialStep(currentTutorialStep + 1);
+              setTutorialSubStep('click-button');
+            } else {
+              setShowTutorialSteps(false);
+              // Start second tutorial (interaction tutorial) after first tutorial ends
+              setShowInteractionTutorial(true);
+              setCurrentInteractionStep(0);
+            }
+          }}
+          onPrevious={() => {
+            if (currentTutorialStep > 0) {
+              setCurrentTutorialStep(currentTutorialStep - 1);
+              setTutorialSubStep('click-button');
+            }
+          }}
+          onSkip={() => {
+            setShowTutorialSteps(false);
+            // Start second tutorial (interaction tutorial) after first tutorial ends
+            setShowInteractionTutorial(true);
+            setCurrentInteractionStep(0);
+          }}
+        />
+      )}
+
+      {/* Interaction Tutorial Overlay - Shows after "Begin Pipetting" */}
+      {showInteractionTutorial && (
+        <InteractionTutorialOverlay
+          currentStep={currentInteractionStep}
+          onNext={() => {
+            if (currentInteractionStep < 1) {
+              setCurrentInteractionStep(currentInteractionStep + 1);
+            } else {
+              setShowInteractionTutorial(false);
+            }
+          }}
+          onPrevious={() => {
+            if (currentInteractionStep > 0) {
+              setCurrentInteractionStep(currentInteractionStep - 1);
+            }
+          }}
+          onSkip={() => setShowInteractionTutorial(false)}
+        />
+      )}
+
       {/* Tutorial Overlay - Shows immediately when entering Live Lab Simulation */}
       {showTutorial && (
         <TutorialOverlay
@@ -1510,14 +1693,14 @@ export default function PipetteSimulator() {
           if (sceneRef.current) {
             sceneRef.current = null;
           }
-          router.push('/home');
+          router.push('/sim-dashboard');
         }}
         className="absolute top-4 left-4 z-30 bg-white rounded-lg px-4 py-2 border-2 border-slate-300 shadow-lg hover:bg-slate-50 transition-colors flex items-center gap-2"
       >
         <svg className="w-5 h-5 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
         </svg>
-        <span className="text-slate-700 font-semibold">Back to Home</span>
+        <span className="text-slate-700 font-semibold">Back to Dashboard</span>
       </button>
 
       {/* Main Simulation Area */}
@@ -1576,18 +1759,53 @@ export default function PipetteSimulator() {
         }}
       >
         <div className="relative z-10 flex flex-col h-full">
+          {/* Mascot Welcome Message */}
+          {showMascotWelcome && tutorialScenario && (
+            <div className="shrink-0 mb-4 animate-fade-in">
+              <div className="bg-gradient-to-br from-blue-50 to-purple-50 rounded-xl p-4 border-2 border-blue-200 shadow-lg">
+                <div className="flex items-start gap-3">
+                  <img
+                    src="/mascot_floating.png"
+                    alt="PipettePal"
+                    className="w-12 h-12 flex-shrink-0"
+                  />
+                  <div className="flex-1">
+                    <p className="text-base text-slate-900 font-medium whitespace-pre-wrap">
+                      {tutorialScenario.welcomeMessage}
+                    </p>
+                    <button
+                      onClick={() => setShowMascotWelcome(false)}
+                      className="mt-2 text-xs text-blue-600 hover:text-blue-700 font-semibold"
+                    >
+                      Got it! →
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Current Task - Top */}
-          <div className="shrink-0 mb-4">
+          <div id="current-task-area" className="shrink-0 mb-4">
             <div className="bg-white rounded-xl p-4 border-2 border-slate-300 shadow-lg">
               <h3 className="text-sm font-semibold text-slate-700 mb-2">Current Task:</h3>
-              <p className="text-base text-slate-900 font-medium">{currentTask}</p>
+              <div className="text-sm text-slate-900 font-medium whitespace-pre-wrap leading-relaxed">
+                {currentTask}
+              </div>
             </div>
           </div>
 
           <div className="shrink-0 mb-4 flex justify-end">
             <div className="flex gap-2">
               <button
-                onClick={() => setShowPipettePalette(true)}
+                id="pipette-colors-button"
+                onClick={() => {
+                  setShowPipettePalette(true);
+                  // If in tutorial step 2 and waiting for button click, move to next substep
+                  if (showTutorialSteps && currentTutorialStep === 1 && tutorialSubStep === 'click-button') {
+                    setTutorialSubStep('select-pipette');
+                  }
+                }}
                 className="flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-300 bg-white text-sm font-semibold text-slate-700 hover:border-slate-500 hover:text-slate-900 transition-colors"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1636,7 +1854,7 @@ export default function PipetteSimulator() {
           </div>
 
           {/* Live Feedback - 3 boxes in a row */}
-          <div className="shrink-0 mb-4">
+          <div id="live-feedback" className="shrink-0 mb-4">
             <h3 className="text-sm font-semibold mb-2 text-slate-700">Live Feedback:</h3>
             <div className="grid grid-cols-3 gap-2">
               {/* Angle Indicator */}
@@ -1853,24 +2071,26 @@ export default function PipetteSimulator() {
             <div className="mb-4">
               <h4 className="text-sm font-semibold mb-2 text-slate-700">Actions</h4>
               <div className="space-y-2">
-                <button
-                  id="plungerStop1Btn"
-                  onClick={handlePlunger1Click}
-                  className="control-btn bg-pink-500 hover:bg-pink-600 text-white rounded-lg w-full h-12 text-sm font-semibold shadow-md text-center"
-                  title="Plunger (P)"
-                >
-                  Plunger (P)
-                  <div className="text-xs font-normal">Aspirate/Dispense</div>
-                </button>
-                <button
-                  id="plungerStop2Btn"
-                  onClick={handlePlunger2Click}
-                  className="control-btn bg-purple-600 hover:bg-purple-700 text-white rounded-lg w-full h-12 text-sm font-semibold shadow-md text-center"
-                  title="Blow-out (B)"
-                >
-                  Blow-out (B)
-                  <div className="text-xs font-normal">Stop 2</div>
-                </button>
+                <div id="plunger-controls" className="space-y-2">
+                  <button
+                    id="plungerStop1Btn"
+                    onClick={handlePlunger1Click}
+                    className="control-btn bg-pink-500 hover:bg-pink-600 text-white rounded-lg w-full h-12 text-sm font-semibold shadow-md text-center"
+                    title="Plunger (P)"
+                  >
+                    Plunger (P)
+                    <div className="text-xs font-normal">Aspirate/Dispense</div>
+                  </button>
+                  <button
+                    id="plungerStop2Btn"
+                    onClick={handlePlunger2Click}
+                    className="control-btn bg-purple-600 hover:bg-purple-700 text-white rounded-lg w-full h-12 text-sm font-semibold shadow-md text-center"
+                    title="Blow-out (B)"
+                  >
+                    Blow-out (B)
+                    <div className="text-xs font-normal">Stop 2</div>
+                  </button>
+                </div>
                 <button
                   id="ejectTipBtn"
                   onClick={ejectTip}
@@ -1882,11 +2102,11 @@ export default function PipetteSimulator() {
             </div>
 
             {/* Movement Controls */}
-            <div className="bg-white p-4 rounded-lg border border-slate-300">
+            <div id="movement-controls" className="bg-white p-4 rounded-lg border border-slate-300">
               <h4 className="text-sm font-semibold mb-3 text-slate-700">Movement</h4>
-              <div className="space-y-3">
+              <div className="flex items-center gap-4 justify-center">
                 {/* Arrow Keys */}
-                <div className="grid grid-cols-3 gap-2 w-32 mx-auto">
+                <div className="grid grid-cols-3 gap-2 w-32">
                   <div></div>
                   <button
                     id="arrowUp"
@@ -1926,7 +2146,7 @@ export default function PipetteSimulator() {
                   <div></div>
                 </div>
                 
-                {/* Height Controls - Vertical Scrollbar */}
+                {/* Height Controls - Side by side with arrow keys */}
                 <div className="flex flex-col items-center gap-2">
                   <div className="text-center mb-1">
                     <div className="text-xs font-bold text-slate-700 uppercase">Height</div>
@@ -1958,6 +2178,24 @@ export default function PipetteSimulator() {
                       }}
                     />
                   </div>
+                </div>
+                
+                {/* Tilt Controls */}
+                <div id="tilt-controls" className="mt-4 flex items-center justify-center gap-2">
+                  <button
+                    onClick={() => tiltPipette(-0.1)}
+                    className="bg-slate-200 hover:bg-slate-300 text-slate-900 px-4 py-2 rounded-lg shadow-md text-sm font-semibold"
+                    title="Tilt Left"
+                  >
+                    ↺ Left
+                  </button>
+                  <button
+                    onClick={() => tiltPipette(0.1)}
+                    className="bg-slate-200 hover:bg-slate-300 text-slate-900 px-4 py-2 rounded-lg shadow-md text-sm font-semibold"
+                    title="Tilt Right"
+                  >
+                    Right ↻
+                  </button>
                 </div>
               </div>
             </div>
@@ -2306,7 +2544,7 @@ export default function PipetteSimulator() {
 
       {/* Pipette Palette Modal */}
       {showPipettePalette && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4">
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 p-4">
           <div className="bg-white w-full max-w-3xl rounded-3xl border-4 border-slate-200 shadow-2xl relative">
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
               <div>

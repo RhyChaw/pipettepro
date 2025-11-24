@@ -1,0 +1,205 @@
+{
+  "cleanedNote": {
+    "id": "note-1234567890-abc123",
+    "userId": "user@example.com",
+    "title": "Pipetting Protocol",
+    "originalFileName": "lab-manual.pdf",
+    "rawText": "Full extracted text with headers and footers...",
+    "cleanedText": "Cleaned text without headers, footers, page numbers...",
+    "sections": [
+      {
+        "type": "materials",
+        "title": "Required Materials",
+        "content": "1. p200 pipette\n2. Sterile tips\n3. Reagent A (100 µL)\n4. Reagent B (50 µL)",
+        "order": 1
+      },
+      {
+        "type": "equipment",
+        "title": "Equipment",
+        "content": "Micropipette (p200), Tip rack, Microcentrifuge tubes",
+        "order": 2
+      },
+      {
+        "type": "procedure_steps",
+        "title": "Procedure",
+        "content": "Step 1: Select the p200 pipette\nStep 2: Attach a sterile tip\nStep 3: Set volume to 100 µL\nStep 4: Aspirate from Reagent A\nStep 5: Dispense into tube",
+        "order": 3
+      },
+      {
+        "type": "safety_notes",
+        "title": "Safety Precautions",
+        "content": "Wear gloves. Avoid contamination.",
+        "order": 4
+      }
+    ],
+    "tags": ["pipetting", "p200", "reagent", "procedure", "safety"],
+    "course": "Biology 101",
+    "experiment": "DNA Extraction",
+    "date": "2024-01-15T10:00:00Z",
+    "createdAt": "2024-01-15T10:00:00Z",
+    "updatedAt": "2024-01-15T10:00:00Z",
+    "summary": "This note contains 4 sections covering materials, equipment, procedure_steps, safety_notes."
+  },
+  "simulatorSteps": {
+    "id": "scenario-1234567890",
+    "noteId": "note-1234567890-abc123",
+    "title": "Pipetting Protocol Simulation",
+    "description": "Practice pipetting 100 µL from Reagent A to tube",
+    "experimentType": "Liquid Transfer",
+    "equipment": ["p200 pipette", "tip rack", "microcentrifuge tubes"],
+    "reagents": [
+      {
+        "name": "Reagent A",
+        "volume": 100,
+        "container": "Source tube"
+      }
+    ],
+    "steps": [
+      {
+        "id": "step-1",
+        "type": "select_pipette",
+        "order": 1,
+        "instruction": "Select the p200 pipette",
+        "pipetteId": "p200",
+        "validationCriteria": {
+          "pipette": "p200"
+        }
+      },
+      {
+        "id": "step-2",
+        "type": "attach_tip",
+        "order": 2,
+        "instruction": "Attach a sterile tip to the pipette",
+        "validationCriteria": {}
+      },
+      {
+        "id": "step-3",
+        "type": "set_volume",
+        "order": 3,
+        "instruction": "Set the volume to 100 µL",
+        "targetVolume": 100,
+        "validationCriteria": {
+          "volume": 100
+        }
+      },
+      {
+        "id": "step-4",
+        "type": "move_to_source",
+        "order": 4,
+        "instruction": "Move the pipette to the source container (Reagent A)",
+        "sourceContainer": "Source tube",
+        "validationCriteria": {
+          "container": "Source tube"
+        }
+      },
+      {
+        "id": "step-5",
+        "type": "aspirate",
+        "order": 5,
+        "instruction": "Aspirate 100 µL from Reagent A",
+        "targetVolume": 100,
+        "sourceContainer": "Source tube",
+        "validationCriteria": {
+          "volume": 100
+        }
+      },
+      {
+        "id": "step-6",
+        "type": "move_to_target",
+        "order": 6,
+        "instruction": "Move the pipette to the target container",
+        "targetContainer": "Target tube",
+        "validationCriteria": {
+          "container": "Target tube"
+        }
+      },
+      {
+        "id": "step-7",
+        "type": "dispense",
+        "order": 7,
+        "instruction": "Dispense the liquid into the target tube",
+        "targetVolume": 100,
+        "targetContainer": "Target tube",
+        "validationCriteria": {
+          "volume": 100
+        }
+      },
+      {
+        "id": "step-8",
+        "type": "eject_tip",
+        "order": 8,
+        "instruction": "Eject the used tip into the waste bin",
+        "validationCriteria": {}
+      }
+    ],
+    "createdAt": "2024-01-15T10:30:00Z",
+    "estimatedDuration": 5,
+    "difficulty": "intermediate",
+    "missingInfo": []
+  },
+  "quizQuestions": {
+    "id": "quiz-1234567890",
+    "noteId": "note-1234567890-abc123",
+    "title": "Quiz from Lab Manual",
+    "questions": [
+      {
+        "id": "q-1",
+        "type": "multiple_choice",
+        "difficulty": "Beginner",
+        "questionText": "Which pipette should you use for 100 µL?",
+        "options": ["p10", "p200", "p1000"],
+        "correctAnswer": 1,
+        "explanation": "p200 is designed for volumes 20-200 µL, making it ideal for 100 µL",
+        "sourceSection": "procedure_steps",
+        "tags": ["pipette", "volume"]
+      },
+      {
+        "id": "q-2",
+        "type": "fill_in_blank",
+        "difficulty": "Intermediate",
+        "questionText": "Before aspirating, you must _____ a sterile tip.",
+        "correctAnswer": "attach",
+        "explanation": "Always attach a fresh tip before aspirating to prevent contamination",
+        "sourceSection": "procedure_steps",
+        "tags": ["tip", "contamination"]
+      },
+      {
+        "id": "q-3",
+        "type": "procedure_ordering",
+        "difficulty": "Advanced",
+        "questionText": "Arrange these steps in the correct order:",
+        "options": ["Set volume", "Attach tip", "Select pipette", "Aspirate"],
+        "correctAnswer": ["Select pipette", "Attach tip", "Set volume", "Aspirate"],
+        "explanation": "The correct sequence is: select pipette → attach tip → set volume → aspirate",
+        "sourceSection": "procedure_steps",
+        "tags": ["procedure", "order"]
+      },
+      {
+        "id": "q-4",
+        "type": "safety_related",
+        "difficulty": "Beginner",
+        "questionText": "What safety equipment should you wear during pipetting?",
+        "options": ["Gloves", "Safety glasses", "Both"],
+        "correctAnswer": 2,
+        "explanation": "Both gloves and safety glasses protect against contamination and splashes",
+        "sourceSection": "safety_notes",
+        "tags": ["safety", "ppe"]
+      },
+      {
+        "id": "q-5",
+        "type": "calculation",
+        "difficulty": "Intermediate",
+        "questionText": "If you need to transfer 150 µL and your p200 pipette has a range of 20-200 µL, is this appropriate?",
+        "options": ["Yes", "No"],
+        "correctAnswer": 0,
+        "explanation": "150 µL is within the p200 range (20-200 µL), making it appropriate",
+        "sourceSection": "procedure_steps",
+        "tags": ["calculation", "volume"]
+      }
+    ],
+    "createdAt": "2024-01-15T10:20:00Z",
+    "difficulty": "Intermediate",
+    "estimatedTime": 8
+  }
+}
+
