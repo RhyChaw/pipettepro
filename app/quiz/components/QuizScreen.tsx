@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { QUESTIONS } from '../constants';
 import { Category, Difficulty, Question, QuizResult, QuestionOption } from '../types';
 import { CheckIcon, XIcon } from './icons';
