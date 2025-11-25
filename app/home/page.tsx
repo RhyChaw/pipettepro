@@ -224,6 +224,17 @@ export default function HomePage() {
       ),
       primary: false,
     },
+    {
+      title: '(Beta Version) Pipette with your hands!',
+      description: 'Control the pipette using hand gestures and motion tracking',
+      href: '/ml',
+      icon: (
+        <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 10-3 0m3 0h11.48M21 12l-8.5 8.5M13 12l8.5-8.5M3 12h18" />
+        </svg>
+      ),
+      primary: false,
+    },
   ];
 
   // Check if all roadmap steps are completed (steps 2-4)

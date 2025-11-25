@@ -202,8 +202,10 @@ body {
 
 /* Vertical Slider Styles */
 input[type="range"][orient="vertical"] {
-  writing-mode: bt-lr; /* IE */
-  -webkit-appearance: slider-vertical; /* WebKit */
+  writing-mode: vertical-lr;
+  direction: rtl;
+  -webkit-appearance: none;
+  appearance: none;
   width: 8px;
   height: 128px;
   padding: 0 5px;

@@ -116,7 +116,19 @@ const quizQuestions = [
   },
 ];
 
-export default function PipetteSimulator() {
+interface PipetteSimulatorProps {
+  handTrackingEnabled?: boolean;
+  handLandmarks?: number[][];
+  selectedHand?: 'left' | 'right' | null;
+  calibrationOffset?: { angle: number; position: { x: number; y: number; z: number } } | null;
+}
+
+export default function PipetteSimulator({ 
+  handTrackingEnabled = false, 
+  handLandmarks = [],
+  selectedHand = null,
+  calibrationOffset = null
+}: PipetteSimulatorProps = {}) {
   const { userProfile, updateUserProfile } = useAuth();
   const router = useRouter();
   const labContainerRef = useRef<HTMLDivElement>(null);
@@ -142,12 +154,26 @@ export default function PipetteSimulator() {
     isCorrect: boolean;
     explanation: string;
   }>({ show: false, isCorrect: false, explanation: '' });
-  const [feedbackStates, setFeedbackStates] = useState({
-    angle: { value: '--', status: 'neutral' as 'correct' | 'incorrect' | 'neutral' },
-    depth: { value: '--', status: 'neutral' as 'correct' | 'incorrect' | 'neutral' },
-    plunger: { value: 'Ready', status: 'neutral' as 'correct' | 'incorrect' | 'neutral' },
-    beaker: { value: '--', status: 'neutral' as 'correct' | 'incorrect' | 'neutral' },
-  });
+  type FeedbackStatus = 'correct' | 'incorrect' | 'neutral';
+  type FeedbackSection = { value: string; status: FeedbackStatus };
+  type FeedbackStates = {
+    angle: FeedbackSection;
+    depth: FeedbackSection;
+    plunger: FeedbackSection;
+    beaker: FeedbackSection;
+  };
+
+  const initialFeedbackState: FeedbackStates = {
+    angle: { value: '--', status: 'neutral' },
+    depth: { value: '--', status: 'neutral' },
+    plunger: { value: 'Ready', status: 'neutral' },
+    beaker: { value: '--', status: 'neutral' },
+  };
+
+  const [feedbackStates, setFeedbackStates] = useState<FeedbackStates>(initialFeedbackState);
+  // Thumb open timer for blow-out detection
+  const thumbOpenTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const [thumbOpenStartTime, setThumbOpenStartTime] = useState<number | null>(null);
   // Only show tutorial if user hasn't completed it yet
   const [showTutorial, setShowTutorial] = useState(false);
   const [feedbackConsole, setFeedbackConsole] = useState<string>('');
@@ -158,6 +184,21 @@ export default function PipetteSimulator() {
   const [noteSaving, setNoteSaving] = useState(false);
   const [noteError, setNoteError] = useState<string | null>(null);
   const [showPipettePalette, setShowPipettePalette] = useState(false);
+  const updateFeedbackStates = useCallback((updates: Partial<FeedbackStates>) => {
+    setFeedbackStates((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      (Object.keys(updates) as Array<keyof FeedbackStates>).forEach((key) => {
+        const update = updates[key];
+        if (!update) return;
+        if (prev[key].value !== update.value || prev[key].status !== update.status) {
+          next[key] = update;
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, []);
 
   // Load tutorial scenario when in tutorial mode
   useEffect(() => {
@@ -236,16 +277,24 @@ export default function PipetteSimulator() {
   const [currentTutorialStep, setCurrentTutorialStep] = useState(0);
   const [tutorialSubStep, setTutorialSubStep] = useState<'click-button' | 'select-pipette'>('click-button');
   // Second tutorial for interaction (starts after "Begin Pipetting")
-  const [showInteractionTutorial, setShowInteractionTutorial] = useState(false);
+  const [showInteractionTutorial, setShowInteractionTutorial] = useState(handTrackingEnabled);
   const [currentInteractionStep, setCurrentInteractionStep] = useState(0);
   const [currentAngle, setCurrentAngle] = useState(75); // Initial angle in degrees
+  const currentAngleRef = useRef(currentAngle);
+  useEffect(() => {
+    currentAngleRef.current = currentAngle;
+  }, [currentAngle]);
   const [zoomLevel, setZoomLevel] = useState(7); // Camera Z position (7 = default, lower = zoomed in, higher = zoomed out)
   const [isHoveringTipBox, setIsHoveringTipBox] = useState(false);
   const [tipBoxHoverPosition, setTipBoxHoverPosition] = useState<{ x: number; y: number } | null>(null);
+  const isHoveringTipBoxRef = useRef(false);
+  const tipBoxHoverPositionRef = useRef<{ x: number; y: number } | null>(null);
   const [showTipAttachedNotification, setShowTipAttachedNotification] = useState(false);
   const [tipAttachedStepCompleted, setTipAttachedStepCompleted] = useState(false);
   const [isHoveringWasteBin, setIsHoveringWasteBin] = useState(false);
   const [wasteBinHoverPosition, setWasteBinHoverPosition] = useState<{ x: number; y: number } | null>(null);
+  const isHoveringWasteBinRef = useRef(false);
+  const wasteBinHoverPositionRef = useRef<{ x: number; y: number } | null>(null);
   const [waterTransferred, setWaterTransferred] = useState(false);
   const [blueDyeTransferred, setBlueDyeTransferred] = useState(false);
   const [firstTipEjected, setFirstTipEjected] = useState(false);
@@ -664,8 +713,8 @@ export default function PipetteSimulator() {
     pipetteGroup.add(bodyMesh, plungerMesh, ejectorMesh, shaftMesh, pipetteTipMesh);
     pipetteGroup.scale.set(0.675, 0.675, 0.675); // 0.75 of original 0.9 scale
     pipetteGroup.position.y = 5; // Closer to camera, above table (table is at 3.7)
-    // Set initial rotation to 75 degrees (so users can see it's wrong - should be 90 degrees)
-    pipetteGroup.rotation.z = (75 * Math.PI) / 180;
+    // Set initial rotation: vertical (0 degrees) for hand tracking, 75 degrees otherwise
+    pipetteGroup.rotation.z = handTrackingEnabled ? 0 : (75 * Math.PI) / 180;
     pipetteGroup.castShadow = true;
     scene.add(pipetteGroup);
 
@@ -884,7 +933,11 @@ export default function PipetteSimulator() {
       // Update current angle display
       if (pipetteGroup) {
         const angleInDegrees = (pipetteGroup.rotation.z * 180) / Math.PI;
-        setCurrentAngle(Math.round(angleInDegrees));
+        const roundedAngle = Math.round(angleInDegrees);
+        if (roundedAngle !== currentAngleRef.current) {
+          currentAngleRef.current = roundedAngle;
+          setCurrentAngle(roundedAngle);
+        }
       }
 
       // Update plunger position
@@ -947,19 +1000,49 @@ export default function PipetteSimulator() {
             const x = (tipBoxCenter.x * 0.5 + 0.5) * window.innerWidth;
             const y = (tipBoxCenter.y * -0.5 + 0.5) * window.innerHeight;
             
-            setIsHoveringTipBox(true);
-            setTipBoxHoverPosition({ x, y });
+            // Only update state if it changed
+            if (!isHoveringTipBoxRef.current) {
+              setIsHoveringTipBox(true);
+              isHoveringTipBoxRef.current = true;
+            }
+            if (!tipBoxHoverPositionRef.current || 
+                tipBoxHoverPositionRef.current.x !== x || 
+                tipBoxHoverPositionRef.current.y !== y) {
+              setTipBoxHoverPosition({ x, y });
+              tipBoxHoverPositionRef.current = { x, y };
+            }
           } else {
-            setIsHoveringTipBox(false);
-            setTipBoxHoverPosition(null);
+            // Only update state if it changed
+            if (isHoveringTipBoxRef.current) {
+              setIsHoveringTipBox(false);
+              isHoveringTipBoxRef.current = false;
+            }
+            if (tipBoxHoverPositionRef.current !== null) {
+              setTipBoxHoverPosition(null);
+              tipBoxHoverPositionRef.current = null;
+            }
           }
         } else {
-          setIsHoveringTipBox(false);
-          setTipBoxHoverPosition(null);
+          // Only update state if it changed
+          if (isHoveringTipBoxRef.current) {
+            setIsHoveringTipBox(false);
+            isHoveringTipBoxRef.current = false;
+          }
+          if (tipBoxHoverPositionRef.current !== null) {
+            setTipBoxHoverPosition(null);
+            tipBoxHoverPositionRef.current = null;
+          }
         }
       } else {
-        setIsHoveringTipBox(false);
-        setTipBoxHoverPosition(null);
+        // Only update state if it changed
+        if (isHoveringTipBoxRef.current) {
+          setIsHoveringTipBox(false);
+          isHoveringTipBoxRef.current = false;
+        }
+        if (tipBoxHoverPositionRef.current !== null) {
+          setTipBoxHoverPosition(null);
+          tipBoxHoverPositionRef.current = null;
+        }
       }
 
       // Check if pipette is hovering over waste bin (for tip ejection)
@@ -982,15 +1065,38 @@ export default function PipetteSimulator() {
           const x = (binCenter.x * 0.5 + 0.5) * window.innerWidth;
           const y = (binCenter.y * -0.5 + 0.5) * window.innerHeight;
           
-          setIsHoveringWasteBin(true);
-          setWasteBinHoverPosition({ x, y });
+          // Only update state if it changed
+          if (!isHoveringWasteBinRef.current) {
+            setIsHoveringWasteBin(true);
+            isHoveringWasteBinRef.current = true;
+          }
+          if (!wasteBinHoverPositionRef.current || 
+              wasteBinHoverPositionRef.current.x !== x || 
+              wasteBinHoverPositionRef.current.y !== y) {
+            setWasteBinHoverPosition({ x, y });
+            wasteBinHoverPositionRef.current = { x, y };
+          }
         } else {
-          setIsHoveringWasteBin(false);
-          setWasteBinHoverPosition(null);
+          // Only update state if it changed
+          if (isHoveringWasteBinRef.current) {
+            setIsHoveringWasteBin(false);
+            isHoveringWasteBinRef.current = false;
+          }
+          if (wasteBinHoverPositionRef.current !== null) {
+            setWasteBinHoverPosition(null);
+            wasteBinHoverPositionRef.current = null;
+          }
         }
       } else {
-        setIsHoveringWasteBin(false);
-        setWasteBinHoverPosition(null);
+        // Only update state if it changed
+        if (isHoveringWasteBinRef.current) {
+          setIsHoveringWasteBin(false);
+          isHoveringWasteBinRef.current = false;
+        }
+        if (wasteBinHoverPositionRef.current !== null) {
+          setWasteBinHoverPosition(null);
+          wasteBinHoverPositionRef.current = null;
+        }
       }
 
       // Update real-time feedback will be handled by checkInteraction outside
@@ -1108,13 +1214,10 @@ export default function PipetteSimulator() {
     const worldUp = localUp.clone().applyQuaternion(pipetteGroup.quaternion);
     const globalUp = new THREE.Vector3(0, 1, 0);
     const angleDeg = THREE.MathUtils.radToDeg(worldUp.angleTo(globalUp));
-    setFeedbackStates((prev) => ({
-      ...prev,
-      angle: {
-        value: `${angleDeg.toFixed(0)}°`,
-        status: angleDeg < 20 ? 'correct' : 'incorrect',
-      },
-    }));
+    const angleState: FeedbackSection = {
+      value: `${angleDeg.toFixed(0)}°`,
+      status: angleDeg < 20 ? 'correct' : 'incorrect',
+    };
 
     // Check depth - check all containers
     const tipPos = getPipetteTipPosition();
@@ -1132,15 +1235,13 @@ export default function PipetteSimulator() {
       depthResult = checkImmersionDepth(destContainer);
     }
     
-    setFeedbackStates((prev) => ({
-      ...prev,
-      depth: { 
-        value: depthResult.message === '--' ? '--' : `${depthResult.depth.toFixed(1)}mm`, 
-        status: depthResult.status 
-      },
-    }));
+    const depthState: FeedbackSection = {
+      value: depthResult.message === '--' ? '--' : `${depthResult.depth.toFixed(1)}mm`,
+      status: depthResult.status,
+    };
 
     // Check beaker status based on tutorial step
+    let beakerState: FeedbackSection = { value: '--', status: 'neutral' };
     if (showInteractionTutorial) {
       let requiredBeaker: 'water' | 'blueDye' | 'destination' | 'waste' | null = null;
       let currentBeaker: 'water' | 'blueDye' | 'destination' | 'waste' | 'none' = 'none';
@@ -1187,7 +1288,6 @@ export default function PipetteSimulator() {
         }
       }
       
-      // Update beaker status
       if (requiredBeaker) {
         const isCorrect = currentBeaker === requiredBeaker;
         const beakerNames: Record<string, string> = {
@@ -1196,40 +1296,28 @@ export default function PipetteSimulator() {
           destination: 'Destination',
           waste: 'Waste',
         };
-        
-        setFeedbackStates((prev) => ({
-          ...prev,
-          beaker: {
-            value: isCorrect 
-              ? `Correct beaker: ${beakerNames[requiredBeaker]}` 
-              : currentBeaker !== 'none'
-              ? `Incorrect: ${beakerNames[currentBeaker]}`
-              : 'Not in any beaker',
-            status: isCorrect ? 'correct' : 'incorrect',
-          },
-        }));
+
+        beakerState = {
+          value: isCorrect
+            ? `Correct beaker: ${beakerNames[requiredBeaker]}`
+            : currentBeaker !== 'none'
+            ? `Incorrect: ${beakerNames[currentBeaker]}`
+            : 'Not in any beaker',
+          status: isCorrect ? 'correct' : 'incorrect',
+        };
       } else {
-        // No beaker required for this step
-        setFeedbackStates((prev) => ({
-          ...prev,
-          beaker: {
-            value: '--',
-            status: 'neutral',
-          },
-        }));
+        beakerState = { value: '--', status: 'neutral' };
       }
     } else {
-      // Not in tutorial mode
-      setFeedbackStates((prev) => ({
-        ...prev,
-        beaker: {
-          value: '--',
-          status: 'neutral',
-        },
-      }));
+      beakerState = { value: '--', status: 'neutral' };
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentInteractionStep, showInteractionTutorial]);
+
+    updateFeedbackStates({
+      angle: angleState,
+      depth: depthState,
+      beaker: beakerState,
+    });
+  }, [showInteractionTutorial, currentInteractionStep, updateFeedbackStates]);
 
   // Real-time feedback check
   useEffect(() => {
@@ -1243,6 +1331,10 @@ export default function PipetteSimulator() {
   }, [checkInteraction]);
 
   const showFeedback = (title: string, message: string, type: 'correct' | 'error' | 'neutral' = 'neutral', showTip = false) => {
+    // Skip error messages when hand tracking is enabled (ML5 simulation)
+    if (type === 'error' && handTrackingEnabled) {
+      return;
+    }
     setFeedbackTitle(title);
     setFeedbackMessage(message);
     setFeedbackType(type);
@@ -1421,6 +1513,8 @@ export default function PipetteSimulator() {
       
       setIsHoveringWasteBin(false);
       setWasteBinHoverPosition(null);
+      isHoveringWasteBinRef.current = false;
+      wasteBinHoverPositionRef.current = null;
       showFeedback('Tip Ejected', 'The tip has been discarded correctly in the waste bin.', 'correct');
     } else {
       showFeedback('Incorrect Position', 'Move over the red waste bin to eject the tip.', 'error');
@@ -1644,9 +1738,20 @@ export default function PipetteSimulator() {
     if (!sceneRef.current) return;
     const { gameState, sourceContainer, sourceContainer2, destContainer } = sceneRef.current;
 
+    // Auto-select default pipette if in hand tracking mode and none selected
     if (!gameState.selectedPipette) {
-      showFeedback('No Pipette', 'Please select a pipette from the panel first.', 'error');
-      return;
+      if (handTrackingEnabled) {
+        // Auto-select P200 as default for hand tracking
+        const defaultPipette = pipettes.find(p => p.id === 'p200');
+        if (defaultPipette) {
+          gameState.selectedPipette = defaultPipette;
+          setSelectedPipetteId(defaultPipette.id);
+        }
+      } else {
+        // Only show error if not in hand tracking mode
+        showFeedback('No Pipette', 'Please select a pipette from the panel first.', 'error');
+        return;
+      }
     }
     if (!gameState.hasTip) {
       showFeedback('No Tip!', 'You must attach a tip from the tip box first.', 'error');
@@ -1714,6 +1819,15 @@ export default function PipetteSimulator() {
   const handlePlunger2Click = () => {
     if (!sceneRef.current) return;
     const { gameState, destContainer } = sceneRef.current;
+
+    // Auto-select default pipette if in hand tracking mode and none selected
+    if (!gameState.selectedPipette && handTrackingEnabled) {
+      const defaultPipette = pipettes.find(p => p.id === 'p200');
+      if (defaultPipette) {
+        gameState.selectedPipette = defaultPipette;
+        setSelectedPipetteId(defaultPipette.id);
+      }
+    }
 
     if (!gameState.hasTip) {
       showFeedback('No Tip!', 'You must attach a tip from the tip box first.', 'error');
@@ -1815,6 +1929,153 @@ export default function PipetteSimulator() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [movePipetteHorizontal, movePipetteVertical, handlePlunger1Click, handlePlunger2Click]);
+
+  // Hand tracking control
+  useEffect(() => {
+    if (!handTrackingEnabled || !handLandmarks || handLandmarks.length === 0 || !sceneRef.current) {
+      // Ensure pipette is vertical when no hand tracking
+      if (sceneRef.current?.pipetteGroup) {
+        sceneRef.current.pipetteGroup.rotation.z = 0; // Vertical
+        setCurrentAngle(0);
+      }
+      return;
+    }
+
+    // Hand landmarks structure (21 points):
+    // 0: wrist, 1-4: thumb, 5-8: index, 9-12: middle, 13-16: ring, 17-20: pinky
+    const wrist = handLandmarks[0];
+    const indexTip = handLandmarks[8];
+    const middleTip = handLandmarks[12];
+    const thumbTip = handLandmarks[4];
+    
+    if (!wrist || !indexTip || !middleTip) return;
+
+    // Map hand position to pipette position
+    // Normalize hand coordinates (assuming 640x480 video) to 3D space
+    // Hand X: 0-640 maps to pipette X: -10 to 10
+    // Hand Y: 0-480 maps to pipette Y (height) - keep stable
+    // Hand Z (depth estimate) maps to pipette Z: closer = positive Z, further = negative Z
+    
+    // Mirror X coordinate (flip horizontally) so movement matches hand naturally
+    const normalizedX = -((wrist[0] / 640) - 0.5) * 20; // Mirrored: -10 to 10 (flipped)
+    // Mirror Y coordinate (flip vertically) so up goes up and down goes down
+    // Increased sensitivity for Y movement (multiplier increased from 2 to 8)
+    const normalizedY = Math.max(4.5, Math.min(19, 5 + -((wrist[1] / 480) - 0.5) * 8)); // Mirrored Y: inverted, higher sensitivity
+    // Map hand depth (Z) to pipette Z: closer to camera = positive Z, further = negative Z
+    // wrist[2] is depth: typically ranges from -0.5 to 0.5, where positive is closer
+    const normalizedZ = (wrist[2] || 0) * 10; // Depth-based Z: -5 to 5, positive = closer
+    
+    // Smooth movement
+    const { pipetteGroup, gameState } = sceneRef.current;
+    const smoothingFactor = 0.1;
+    pipetteGroup.position.x += (normalizedX - pipetteGroup.position.x) * smoothingFactor;
+    pipetteGroup.position.z += (normalizedZ - pipetteGroup.position.z) * smoothingFactor;
+    gameState.pipetteY = normalizedY;
+    pipetteGroup.position.y = normalizedY;
+    
+    // Update slider if exists
+    const slider = document.getElementById('heightSlider') as HTMLInputElement;
+    if (slider) {
+      slider.value = gameState.pipetteY.toString();
+    }
+    
+    // Keep pipette vertical (0 degrees) - don't rotate based on hand orientation
+    // Only update position, not rotation
+    pipetteGroup.rotation.z = 0; // Always vertical
+    setCurrentAngle(0);
+    
+    // Gesture detection for plunger actions
+    // Pinch gesture: thumb and index finger close together
+    const thumbToIndexDistance = Math.sqrt(
+      Math.pow(thumbTip[0] - indexTip[0], 2) + 
+      Math.pow(thumbTip[1] - indexTip[1], 2)
+    );
+    
+    // Thumb open detection: thumb extended away from index finger
+    const thumbOpenThreshold = 60; // Distance threshold for thumb open
+    
+    // Fist gesture: all fingers curled (tips close to base)
+    const indexToBaseDistance = Math.sqrt(
+      Math.pow(indexTip[0] - handLandmarks[5][0], 2) + 
+      Math.pow(indexTip[1] - handLandmarks[5][1], 2)
+    );
+    const middleToBaseDistance = Math.sqrt(
+      Math.pow(middleTip[0] - handLandmarks[9][0], 2) + 
+      Math.pow(middleTip[1] - handLandmarks[9][1], 2)
+    );
+    
+    // Thumb click (pinch) for plunger stop 1 (P)
+    // Only trigger if not already plunging
+    if (thumbToIndexDistance < 30) {
+      // Clear thumb open timer if thumb is clicked
+      if (thumbOpenTimerRef.current) {
+        clearTimeout(thumbOpenTimerRef.current);
+        thumbOpenTimerRef.current = null;
+      }
+      setThumbOpenStartTime(null);
+      
+      // Update feedback to show "Plunge"
+      updateFeedbackStates({
+        plunger: { value: 'Plunge', status: 'correct' }
+      });
+      
+      if (!sceneRef.current.gameState.plungerState || sceneRef.current.gameState.plungerState === 'rest') {
+        handlePlunger1Click();
+      }
+    }
+    // Thumb open detection
+    else if (thumbToIndexDistance > thumbOpenThreshold) {
+      // Start timer if not already started
+      if (thumbOpenStartTime === null) {
+        const startTime = Date.now();
+        setThumbOpenStartTime(startTime);
+        
+        // Set timer for "too long" detection (1.5 seconds)
+        thumbOpenTimerRef.current = setTimeout(() => {
+          updateFeedbackStates({
+            plunger: { value: 'Blow out', status: 'correct' }
+          });
+        }, 1500);
+      }
+    }
+    // Thumb in neutral position (between click and open)
+    else {
+      // Clear timer and reset if thumb returns to neutral
+      if (thumbOpenTimerRef.current) {
+        clearTimeout(thumbOpenTimerRef.current);
+        thumbOpenTimerRef.current = null;
+      }
+      if (thumbOpenStartTime !== null) {
+        setThumbOpenStartTime(null);
+        // Reset to ready if thumb was open but timer was cleared
+        setFeedbackStates((prev) => {
+          if (prev.plunger.value === 'Blow out') {
+            return {
+              ...prev,
+              plunger: { value: 'Ready', status: 'neutral' }
+            };
+          }
+          return prev;
+        });
+      }
+    }
+    
+    // Fist for plunger stop 2 / blow-out (B)
+    if (indexToBaseDistance < 40 && middleToBaseDistance < 40 && sceneRef.current.gameState.dispensedStop1) {
+      handlePlunger2Click();
+    }
+    
+  }, [handTrackingEnabled, handLandmarks, handlePlunger1Click, handlePlunger2Click, thumbOpenStartTime, updateFeedbackStates]);
+
+  // Cleanup thumb open timer on unmount or when hand tracking is disabled
+  useEffect(() => {
+    return () => {
+      if (thumbOpenTimerRef.current) {
+        clearTimeout(thumbOpenTimerRef.current);
+        thumbOpenTimerRef.current = null;
+      }
+    };
+  }, [handTrackingEnabled]);
 
   // Pointer event handlers
   useEffect(() => {
@@ -2185,8 +2446,8 @@ export default function PipetteSimulator() {
             }}
             className="h-32 w-8"
             style={{
-              writingMode: 'bt-lr' as React.CSSProperties['writingMode'],
-              WebkitAppearance: 'slider-vertical',
+              writingMode: 'vertical-lr' as React.CSSProperties['writingMode'],
+              direction: 'rtl',
             }}
             title={`Zoom: ${zoomLevel.toFixed(1)}`}
           />
@@ -2449,7 +2710,9 @@ export default function PipetteSimulator() {
                     feedbackStates.plunger.status === 'correct' ? 'bg-green-500 animate-pulse' : 
                     feedbackStates.plunger.status === 'incorrect' ? 'bg-red-500' : 'bg-slate-400'
                   }`} />
-                  <div className="text-xs text-black text-center">Plunger</div>
+                  <div className="text-xs text-black text-center font-semibold">
+                    {feedbackStates.plunger.value}
+                  </div>
                 </div>
               </div>
 
@@ -2728,8 +2991,8 @@ export default function PipetteSimulator() {
                       defaultValue="5"
                       className="h-32 w-8"
                       style={{
-                        writingMode: 'bt-lr' as React.CSSProperties['writingMode'],
-                        WebkitAppearance: 'slider-vertical',
+                        writingMode: 'vertical-lr' as React.CSSProperties['writingMode'],
+                        direction: 'rtl',
                       }}
                       onChange={(e) => {
                         if (!sceneRef.current) return;
