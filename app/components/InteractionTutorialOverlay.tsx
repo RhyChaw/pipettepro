@@ -8,22 +8,72 @@ interface InteractionTutorialOverlayProps {
   onPrevious: () => void;
   onSkip: () => void;
   currentAngle?: number; // Current pipette angle in degrees
+  tipAttached?: boolean; // Whether tip has been attached
+  waterTransferred?: boolean;
+  firstTipEjected?: boolean;
+  secondTipAttached?: boolean;
+  blueDyeTransferred?: boolean;
+  liquidsMixed?: boolean;
+  secondTipEjected?: boolean;
+  labContainerRef?: React.RefObject<HTMLDivElement | null>; // Reference to the 3D canvas container
 }
 
 const interactionSteps = [
   {
     id: 'fix-orientation',
-    title: 'Fix the Orientation',
+    title: 'Step 1: Fix the Orientation',
     description: 'The pipette should be at a 0-degree angle (perpendicular to the table). Currently it\'s at 75 degrees. Type 0 in the angle input box to set it to perpendicular.',
     highlightSelector: '#angle-input',
     focusArea: 'orientation',
   },
   {
-    id: 'overview-objects',
-    title: 'Overview of Objects',
-    description: 'Let\'s go over all the objects on the table:\n\n• Source: The blue beaker containing the liquid you need to pipette\n• Destination: The light blue beaker where you\'ll dispense the liquid\n• Pipette: Your tool for transferring liquid\n• Tips Box: Contains sterile pipette tips\n• Waste: The red box for discarding used tips',
+    id: 'attach-tip',
+    title: 'Step 2: Attach the Tip',
+    description: 'Now hover the pipette over the tip box. You\'ll see an "Attach Tip" button appear. Click it to attach a tip to your pipette.',
     highlightSelector: null,
-    focusArea: 'overview',
+    focusArea: 'tip-attachment',
+  },
+  {
+    id: 'transfer-water',
+    title: 'Step 3: Take Water from Source and Put it in Destination',
+    description: 'Move the pipette over the Water beaker (dark blue). Press the plunger to the first stop to aspirate water, then move to the Destination beaker (light blue) and press the plunger to dispense.',
+    highlightSelector: null,
+    focusArea: 'water-transfer',
+  },
+  {
+    id: 'eject-first-tip',
+    title: 'Step 4: Throw the First Tip in the Waste Bin',
+    description: 'Move the pipette over the red waste bin. When you hover over it, you\'ll see a "Throw Tip" button. Click it to discard the used tip.',
+    highlightSelector: null,
+    focusArea: 'tip-ejection',
+  },
+  {
+    id: 'attach-second-tip',
+    title: 'Step 5: Attach New Tip for 2nd Source from Tip Box',
+    description: 'Go back to the tip box and attach a new tip. Hover over the tip box and click "Attach Tip" again.',
+    highlightSelector: null,
+    focusArea: 'second-tip-attachment',
+  },
+  {
+    id: 'transfer-blue-dye',
+    title: 'Step 6: Take Blue Dye and Put it in Destination Beaker',
+    description: 'Move the pipette over the Blue Dye beaker (bright blue). Aspirate the dye, then move to the Destination beaker and dispense it.',
+    highlightSelector: null,
+    focusArea: 'blue-dye-transfer',
+  },
+  {
+    id: 'mix-liquids',
+    title: 'Step 7: Mix Both Liquids to be Cohesive in the Destination',
+    description: 'The water and blue dye should now be mixed in the destination beaker. You should see a light blue color forming. This shows the liquids have been successfully mixed together.',
+    highlightSelector: null,
+    focusArea: 'mixing',
+  },
+  {
+    id: 'eject-second-tip',
+    title: 'Step 8: Throw the 2nd Tip',
+    description: 'Finally, move the pipette over the waste bin again and discard the second tip. Click "Throw Tip" when the button appears.',
+    highlightSelector: null,
+    focusArea: 'second-tip-ejection',
   },
 ];
 
@@ -33,6 +83,14 @@ const InteractionTutorialOverlay: React.FC<InteractionTutorialOverlayProps> = ({
   onPrevious,
   onSkip,
   currentAngle = 75,
+  tipAttached = false,
+  waterTransferred = false,
+  firstTipEjected = false,
+  secondTipAttached = false,
+  blueDyeTransferred = false,
+  liquidsMixed = false,
+  secondTipEjected = false,
+  labContainerRef,
 }) => {
   const step = interactionSteps[currentStep];
   const isLastStep = currentStep === interactionSteps.length - 1;
@@ -43,6 +101,33 @@ const InteractionTutorialOverlay: React.FC<InteractionTutorialOverlayProps> = ({
     width: number;
     height: number;
   } | null>(null);
+  const [containerBounds, setContainerBounds] = useState<{
+    left: number;
+    width: number;
+  } | null>(null);
+
+  // Calculate container bounds
+  useEffect(() => {
+    const updateContainerBounds = () => {
+      if (labContainerRef?.current) {
+        const rect = labContainerRef.current.getBoundingClientRect();
+        setContainerBounds({
+          left: rect.left,
+          width: rect.width,
+        });
+      }
+    };
+
+    updateContainerBounds();
+    window.addEventListener('resize', updateContainerBounds);
+    // Update on scroll in case layout changes
+    const interval = setInterval(updateContainerBounds, 100);
+
+    return () => {
+      window.removeEventListener('resize', updateContainerBounds);
+      clearInterval(interval);
+    };
+  }, [labContainerRef]);
 
   useEffect(() => {
     if (step.highlightSelector) {
@@ -83,54 +168,96 @@ const InteractionTutorialOverlay: React.FC<InteractionTutorialOverlayProps> = ({
         />
       )}
 
-      {/* Content overlay - Positioned below Back to Dashboard button */}
-      <div className="absolute top-20 left-4 z-[101]" style={{ position: 'absolute', maxWidth: '600px', pointerEvents: 'auto' }}>
-        <div className="bg-white rounded-2xl shadow-2xl w-full p-8 relative border-4 border-blue-200">
+      {/* Content overlay - Positioned at bottom, matching 3D canvas width */}
+      <div 
+        className="absolute bottom-0 z-[101] px-4 pb-4" 
+        style={{ 
+          pointerEvents: 'auto',
+          left: containerBounds ? `${containerBounds.left}px` : '0',
+          width: containerBounds ? `${containerBounds.width}px` : '100%',
+        }}
+      >
+        <div className="bg-white rounded-t-2xl shadow-2xl w-full p-3 relative border-t-4 border-l-4 border-r-4 border-blue-200 max-h-[180px] overflow-y-auto">
           {/* Step indicator */}
-          <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
-              <span className="text-sm font-semibold text-slate-600">
+              <span className="text-[10px] font-semibold text-black">
                 Interaction Tutorial - Step {currentStep + 1} of {interactionSteps.length}
               </span>
             </div>
             <button
               onClick={onSkip}
-              className="text-slate-400 hover:text-slate-600 transition-colors"
+              className="text-black hover:text-slate-700 transition-colors"
               aria-label="Skip tutorial"
             >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
           </div>
 
           {/* Step content */}
-          <div className="mb-6">
-            <h2 className="text-2xl font-bold text-slate-900 mb-4">{step.title}</h2>
-            <p className="text-lg text-slate-700 leading-relaxed whitespace-pre-wrap">
+          <div className="mb-2">
+            <h2 className="text-base font-bold text-black mb-1">{step.title}</h2>
+            <p className="text-xs text-black leading-tight whitespace-pre-wrap">
               {step.description}
             </p>
+            {currentStep === 1 && tipAttached && (
+              <div className="mt-1 p-1.5 bg-green-100 border border-green-300 rounded-md">
+                <p className="text-green-700 text-[10px] font-semibold">Good! Tip attached successfully. Let's continue!</p>
+              </div>
+            )}
+            {currentStep === 2 && waterTransferred && (
+              <div className="mt-1 p-1.5 bg-green-100 border border-green-300 rounded-md">
+                <p className="text-green-700 text-[10px] font-semibold">Excellent! Water transferred successfully!</p>
+              </div>
+            )}
+            {currentStep === 3 && firstTipEjected && (
+              <div className="mt-1 p-1.5 bg-green-100 border border-green-300 rounded-md">
+                <p className="text-green-700 text-[10px] font-semibold">Perfect! Tip discarded correctly!</p>
+              </div>
+            )}
+            {currentStep === 4 && secondTipAttached && (
+              <div className="mt-1 p-1.5 bg-green-100 border border-green-300 rounded-md">
+                <p className="text-green-700 text-[10px] font-semibold">Great! Second tip attached!</p>
+              </div>
+            )}
+            {currentStep === 5 && blueDyeTransferred && (
+              <div className="mt-1 p-1.5 bg-green-100 border border-green-300 rounded-md">
+                <p className="text-green-700 text-[10px] font-semibold">Well done! Blue dye transferred!</p>
+              </div>
+            )}
+            {currentStep === 6 && liquidsMixed && (
+              <div className="mt-1 p-1.5 bg-green-100 border border-green-300 rounded-md">
+                <p className="text-green-700 text-[10px] font-semibold">Perfect! The liquids are now mixed and showing a light blue color!</p>
+              </div>
+            )}
+            {currentStep === 7 && secondTipEjected && (
+              <div className="mt-1 p-1.5 bg-green-100 border border-green-300 rounded-md">
+                <p className="text-green-700 text-[10px] font-semibold">Excellent! Tutorial complete! 🎉</p>
+              </div>
+            )}
           </div>
 
           {/* Navigation buttons */}
-          <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center justify-between gap-2 mt-2">
             <button
               onClick={onPrevious}
               disabled={currentStep === 0}
-              className={`px-6 py-3 rounded-lg font-semibold transition-colors ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
                 currentStep === 0
-                  ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                  : 'bg-slate-200 text-slate-700 hover:bg-slate-300'
+                  ? 'bg-slate-200 text-black cursor-not-allowed opacity-50'
+                  : 'bg-slate-200 text-black hover:bg-slate-300'
               }`}
             >
               Previous
             </button>
 
-            <div className="flex gap-2">
+            <div className="flex gap-1.5">
               {[...Array(interactionSteps.length)].map((_, idx) => (
                 <div
                   key={idx}
-                  className={`w-2 h-2 rounded-full transition-colors ${
+                  className={`w-1.5 h-1.5 rounded-full transition-colors ${
                     idx === currentStep ? 'bg-blue-600' : 'bg-slate-300'
                   }`}
                 />
@@ -139,17 +266,47 @@ const InteractionTutorialOverlay: React.FC<InteractionTutorialOverlayProps> = ({
 
             <button
               onClick={isLastStep ? onSkip : onNext}
-              disabled={currentStep === 0 && currentAngle !== 0}
-              className={`px-6 py-3 rounded-lg font-semibold transition-colors ${
-                currentStep === 0 && currentAngle !== 0
-                  ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
+              disabled={
+                (currentStep === 0 && currentAngle !== 0) ||
+                (currentStep === 1 && !tipAttached) ||
+                (currentStep === 2 && !waterTransferred) ||
+                (currentStep === 3 && !firstTipEjected) ||
+                (currentStep === 4 && !secondTipAttached) ||
+                (currentStep === 5 && !blueDyeTransferred) ||
+                (currentStep === 6 && !liquidsMixed) ||
+                (currentStep === 7 && !secondTipEjected)
+              }
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                (currentStep === 0 && currentAngle !== 0) ||
+                (currentStep === 1 && !tipAttached) ||
+                (currentStep === 2 && !waterTransferred) ||
+                (currentStep === 3 && !firstTipEjected) ||
+                (currentStep === 4 && !secondTipAttached) ||
+                (currentStep === 5 && !blueDyeTransferred) ||
+                (currentStep === 6 && !liquidsMixed) ||
+                (currentStep === 7 && !secondTipEjected)
+                  ? 'bg-slate-300 text-black cursor-not-allowed opacity-50'
                   : 'bg-blue-600 text-white hover:bg-blue-700'
               }`}
             >
               {currentStep === 0 && currentAngle !== 0
                 ? 'Set angle to 0° first'
+                : currentStep === 1 && !tipAttached
+                ? 'Attach tip first'
+                : currentStep === 2 && !waterTransferred
+                ? 'Transfer water first'
+                : currentStep === 3 && !firstTipEjected
+                ? 'Eject tip first'
+                : currentStep === 4 && !secondTipAttached
+                ? 'Attach second tip first'
+                : currentStep === 5 && !blueDyeTransferred
+                ? 'Transfer blue dye first'
+                : currentStep === 6 && !liquidsMixed
+                ? 'Wait for mixing'
+                : currentStep === 7 && !secondTipEjected
+                ? 'Eject second tip first'
                 : isLastStep
-                ? 'Got it!'
+                ? 'Tutorial Complete! 🎉'
                 : 'Next'}
             </button>
           </div>

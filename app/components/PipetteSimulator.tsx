@@ -146,6 +146,7 @@ export default function PipetteSimulator() {
     angle: { value: '--', status: 'neutral' as 'correct' | 'incorrect' | 'neutral' },
     depth: { value: '--', status: 'neutral' as 'correct' | 'incorrect' | 'neutral' },
     plunger: { value: 'Ready', status: 'neutral' as 'correct' | 'incorrect' | 'neutral' },
+    beaker: { value: '--', status: 'neutral' as 'correct' | 'incorrect' | 'neutral' },
   });
   // Only show tutorial if user hasn't completed it yet
   const [showTutorial, setShowTutorial] = useState(false);
@@ -238,6 +239,28 @@ export default function PipetteSimulator() {
   const [showInteractionTutorial, setShowInteractionTutorial] = useState(false);
   const [currentInteractionStep, setCurrentInteractionStep] = useState(0);
   const [currentAngle, setCurrentAngle] = useState(75); // Initial angle in degrees
+  const [zoomLevel, setZoomLevel] = useState(7); // Camera Z position (7 = default, lower = zoomed in, higher = zoomed out)
+  const [isHoveringTipBox, setIsHoveringTipBox] = useState(false);
+  const [tipBoxHoverPosition, setTipBoxHoverPosition] = useState<{ x: number; y: number } | null>(null);
+  const [showTipAttachedNotification, setShowTipAttachedNotification] = useState(false);
+  const [tipAttachedStepCompleted, setTipAttachedStepCompleted] = useState(false);
+  const [isHoveringWasteBin, setIsHoveringWasteBin] = useState(false);
+  const [wasteBinHoverPosition, setWasteBinHoverPosition] = useState<{ x: number; y: number } | null>(null);
+  const [waterTransferred, setWaterTransferred] = useState(false);
+  const [blueDyeTransferred, setBlueDyeTransferred] = useState(false);
+  const [firstTipEjected, setFirstTipEjected] = useState(false);
+  const [secondTipAttached, setSecondTipAttached] = useState(false);
+  const [secondTipEjected, setSecondTipEjected] = useState(false);
+  const [liquidsMixed, setLiquidsMixed] = useState(false);
+  const [showPlungerBar, setShowPlungerBar] = useState(false);
+  const [plungerProgress, setPlungerProgress] = useState(0);
+  const [plungerInterval, setPlungerInterval] = useState<NodeJS.Timeout | null>(null);
+  const [plungerTargetStop, setPlungerTargetStop] = useState(80); // Default 80%, changes to 20% for blue dye
+  const [isAspirating, setIsAspirating] = useState(false);
+  const [activeSourceForAspiration, setActiveSourceForAspiration] = useState<Container | null>(null);
+  const [pipetteLiquidType, setPipetteLiquidType] = useState<'Water' | 'Blue Dye' | null>(null);
+  const [dispensedAtDestination, setDispensedAtDestination] = useState(false);
+  const [blownOutAtDestination, setBlownOutAtDestination] = useState(false);
 
   // Auto-clear feedback console after 5 seconds
   useEffect(() => {
@@ -258,10 +281,11 @@ export default function PipetteSimulator() {
     plungerMesh: THREE.Mesh;
     pipetteTipMesh: PipetteTipMesh;
     sourceContainer: Container;
+    sourceContainer2: Container | null;
     destContainer: Container;
-    wasteContainer: Container;
     wasteBin: THREE.Group;
     tipBoxes: Record<string, THREE.Group>;
+    tipMeshes: Record<string, THREE.Mesh[]>; // Track individual tip meshes for removal
     confettiSystem: THREE.Points | null;
     confettiParticles: Array<{ position: THREE.Vector3; velocity: THREE.Vector3 }>;
     gameState: GameState;
@@ -387,19 +411,19 @@ export default function PipetteSimulator() {
     
     // Add table to scene immediately
     scene.add(labTable);
-    
-    // Reposition all objects that should be on top of the table
-    objectsToReposition.forEach(({ obj, originalY }) => {
-      // Position objects directly on the table surface
-      if (obj !== wasteBin) {
-        obj.position.y = tableTopY;
-      } else {
-        // For waste bin, update its position if it has already loaded
-        if (obj.position.z !== undefined) {
-          // Keep the z position but ensure y is correct
-        }
-      }
-    });
+        
+        // Reposition all objects that should be on top of the table
+        objectsToReposition.forEach(({ obj, originalY }) => {
+          // Position objects directly on the table surface
+          if (obj !== wasteBin) {
+            obj.position.y = tableTopY;
+          } else {
+            // For waste bin, update its position if it has already loaded
+            if (obj.position.z !== undefined) {
+              // Keep the z position but ensure y is correct
+            }
+          }
+        });
 
     // Helper function to load beaker GLB and create container
     const createBeakerContainer = async (
@@ -515,11 +539,11 @@ export default function PipetteSimulator() {
     // Load beakers (labels will be added in the section below)
     let destContainer: Container = placeholderContainer;
     let sourceContainer: Container = placeholderContainer;
-    let wasteContainer: Container = placeholderContainer;
 
     // Create tip boxes
     const tipBoxes: Record<string, THREE.Group> = {};
-    const createTipBox = (color: number) => {
+    const tipMeshes: Record<string, THREE.Mesh[]> = {};
+    const createTipBox = (color: number, pipetteId: string) => {
       const tipBoxGroup = new THREE.Group();
       const boxBaseMat = new THREE.MeshStandardMaterial({ color: 0x374151 });
       const boxLidMat = new THREE.MeshStandardMaterial({ color: 0x4b5563, transparent: true, opacity: 0.8 });
@@ -535,16 +559,19 @@ export default function PipetteSimulator() {
 
       const tipMat = new THREE.MeshStandardMaterial({ color: color });
       const tipGeo = new THREE.ConeGeometry(0.05, 0.5, 8);
+      const tips: THREE.Mesh[] = [];
       for (let i = -0.4; i <= 0.4; i += 0.2) {
         for (let j = -0.6; j <= 0.6; j += 0.3) {
           const tipMesh = new THREE.Mesh(tipGeo, tipMat);
           tipMesh.position.set(i, 1, j);
           baseMesh.add(tipMesh);
+          tips.push(tipMesh);
         }
       }
+      tipMeshes[pipetteId] = tips; // Store tips array for this pipette
       tipBoxGroup.add(baseMesh, lidMesh);
-      // Scale to quarter size (half of current half size)
-      tipBoxGroup.scale.set(0.25, 0.25, 0.25);
+      // Scale to double the previous size (was 0.25, now 0.5)
+      tipBoxGroup.scale.set(0.5, 0.5, 0.5);
       // Position on table, centered and visible
       const initialY = tableTopY; // Start at table top, will be adjusted after table loads
       const adjustedZ = 1; // Keep it visible on the table
@@ -554,29 +581,29 @@ export default function PipetteSimulator() {
     };
 
     pipettes.forEach((pipette) => {
-      const tipBoxGroup = createTipBox(pipette.color);
+      const tipBoxGroup = createTipBox(pipette.color, pipette.id);
       tipBoxGroup.visible = false;
       tipBoxes[pipette.id] = tipBoxGroup;
       scene.add(tipBoxGroup);
     });
 
-    // Create waste bin as a red box - position it beside the source beaker
+    // Create waste bin as a red box - position it beside the destination beaker
     const binGroup = new THREE.Group();
     const initialY = tableTopY;
-    // Position beside source beaker (source is at x = 4, so place waste at x = 6.5)
-    // Same z position as source beaker (z = 0) and same height
-    const adjustedX = 6.5; // Beside source beaker
-    const adjustedZ = 0; // Same z as source beaker
+    // Position beside destination beaker (destination is at x = -4, waste at x = -3)
+    // Same z position as destination beaker (z = 0) and same height
+    const adjustedX = -3; // Beside destination beaker (moved 2 units to positive x)
+    const adjustedZ = 0; // Same z as destination beaker
     
-    // Create red box for waste bin
-    const binGeo = new THREE.BoxGeometry(1.0, 1.2, 1.0);
-    const binMat = new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.6 });
-    const binMesh = new THREE.Mesh(binGeo, binMat);
-    binMesh.position.y = 0.6; // Half height above table
+    // Create red box for waste bin (0.75 of original size)
+    const binGeo = new THREE.BoxGeometry(0.75, 0.9, 0.75); // 0.75 of original (1.0, 1.2, 1.0)
+        const binMat = new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.6 });
+        const binMesh = new THREE.Mesh(binGeo, binMat);
+    binMesh.position.y = 0.45; // Half height above table (0.9 / 2 = 0.45)
     binMesh.castShadow = true;
     binMesh.receiveShadow = true;
-    binGroup.add(binMesh);
-    
+        binGroup.add(binMesh);
+        
     binGroup.position.set(adjustedX, initialY, adjustedZ);
     objectsToReposition.push({ obj: binGroup, originalY: initialY });
     
@@ -636,7 +663,7 @@ export default function PipetteSimulator() {
 
     pipetteGroup.add(bodyMesh, plungerMesh, ejectorMesh, shaftMesh, pipetteTipMesh);
     pipetteGroup.scale.set(0.675, 0.675, 0.675); // 0.75 of original 0.9 scale
-    pipetteGroup.position.y = 3;
+    pipetteGroup.position.y = 5; // Closer to camera, above table (table is at 3.7)
     // Set initial rotation to 75 degrees (so users can see it's wrong - should be 90 degrees)
     pipetteGroup.rotation.z = (75 * Math.PI) / 180;
     pipetteGroup.castShadow = true;
@@ -692,7 +719,7 @@ export default function PipetteSimulator() {
       liquidInPipette: 0,
       dispensedStop1: false,
       plungerState: 'rest',
-      pipetteY: 3,
+      pipetteY: 5, // Closer to camera, above table
       hasTip: false,
     };
 
@@ -719,7 +746,8 @@ export default function PipetteSimulator() {
     };
 
     // Create labels for each object
-    const sourceLabel = createLabel('Source');
+    const sourceLabel = createLabel('Water');
+    const sourceLabel2 = createLabel('Blue Dye');
     const destLabel = createLabel('Destination');
     const pipetteLabel = createLabel('Pipette');
     const tipsBoxLabel = createLabel('Tips Box');
@@ -737,48 +765,84 @@ export default function PipetteSimulator() {
 
     // Add labels to scene (will be positioned dynamically)
     pipetteGroup.add(pipetteLabel);
-    pipetteLabel.position.set(0, 1, 0);
-    // Waste label will be added to waste beaker when it loads
+    pipetteLabel.position.set(0, -0.8, 0); // Bottom of pipette
+    // Add waste label to waste bin
+    wasteBin.add(wasteLabel);
+    wasteLabel.position.set(0, -0.6, 0); // Bottom of waste bin
 
     // Position tip box label (will be updated when tip box is visible)
     const activeTipBox = tipBoxes[gameState.selectedPipette?.id || 'p200'];
     if (activeTipBox) {
       activeTipBox.add(tipsBoxLabel);
-      tipsBoxLabel.position.set(0, 0.8, 0);
+      tipsBoxLabel.position.set(0, -0.5, 0); // Bottom of tip box
     }
 
     // Position source and destination labels after containers load
-    createBeakerContainer(-4, 0, 0.2, 0x60a5fa).then((container) => {
+    createBeakerContainer(-4, 0, 0, 0x60a5fa).then((container) => {
       destContainer = container;
+      // Calculate totalVolume based on full beaker capacity (not initial ratio)
+      // The totalVolume should represent the full beaker capacity
+      const fullHeight = container.height;
+      const liquidGeo = container.liquidMesh.geometry as THREE.CylinderGeometry;
+      const liquidRadius = liquidGeo.parameters.radiusTop;
+      const fullTotalVolume = Math.PI * Math.pow(liquidRadius, 2) * fullHeight;
+      container.totalVolume = fullTotalVolume; // Set to full capacity
+      container.currentVolume = 0; // Start empty
+      // Reset liquid mesh to start empty but ready to fill
+      container.liquidMesh.scale.y = 0; // Start with no liquid
+      container.liquidMesh.position.y = 0; // Position at bottom
+      container.liquidMesh.visible = false; // Hide until liquid is added
+      
       scene.add(container.group);
       container.group.add(destLabel);
-      destLabel.position.set(0, 1.2, 0);
+      destLabel.position.set(0, -0.6, 0); // Bottom of destination beaker
       // Update sceneRef when container is loaded
       if (sceneRef.current) {
         sceneRef.current.destContainer = container;
       }
     });
     
+    // Source 1 - Water - Set to exactly 100 µL (visually full)
     createBeakerContainer(4, 0, 0.9, 0x001c3d).then((container) => {
       sourceContainer = container;
+      // Keep visual at 0.9 (90% full) - liquid should already be visible from createBeakerContainer
+      // Set currentVolume to 100 µL for volume calculations
+      container.currentVolume = 100; // Set to 100 µL
+      // Ensure liquid mesh is visible and properly scaled
+      container.liquidMesh.visible = true;
+      // Make sure scale is correct (should be 1.0 since initialLiquidRatio is applied during creation)
+      if (container.liquidMesh.scale.y === 0) {
+        container.liquidMesh.scale.y = container.initialLiquidRatio || 0.9;
+      }
+      
       scene.add(container.group);
       container.group.add(sourceLabel);
-      sourceLabel.position.set(0, 1.2, 0);
+      sourceLabel.position.set(0, -0.6, 0); // Bottom of source beaker
       // Update sceneRef when container is loaded
       if (sceneRef.current) {
         sceneRef.current.sourceContainer = container;
       }
     });
-    
-    // Create waste beaker (red) beside source beaker
-    createBeakerContainer(6.5, 0, 0.5, 0xef4444).then((container) => {
-      wasteContainer = container;
+
+    // Source 2 - Blue Dye - Set to exactly 100 µL (visually full)
+    createBeakerContainer(6, 0, 0.9, 0x0066ff).then((container) => {
+      const sourceContainer2 = container;
+      // Keep visual at 0.9 (90% full) - liquid should already be visible from createBeakerContainer
+      // Set currentVolume to 100 µL for volume calculations
+      container.currentVolume = 100; // Set to 100 µL
+      // Ensure liquid mesh is visible and properly scaled
+      container.liquidMesh.visible = true;
+      // Make sure scale is correct (should be 1.0 since initialLiquidRatio is applied during creation)
+      if (container.liquidMesh.scale.y === 0) {
+        container.liquidMesh.scale.y = container.initialLiquidRatio || 0.9;
+      }
+      
       scene.add(container.group);
-      container.group.add(wasteLabel);
-      wasteLabel.position.set(0, 1.2, 0);
+      container.group.add(sourceLabel2);
+      sourceLabel2.position.set(0, -0.6, 0); // Bottom of source beaker 2
       // Update sceneRef when container is loaded
       if (sceneRef.current) {
-        sceneRef.current.wasteContainer = container;
+        sceneRef.current.sourceContainer2 = container;
       }
     });
 
@@ -793,10 +857,11 @@ export default function PipetteSimulator() {
       plungerMesh,
       pipetteTipMesh: pipetteTipMesh as unknown as PipetteTipMesh,
       sourceContainer,
+      sourceContainer2: null,
       destContainer,
-      wasteContainer,
       wasteBin,
       tipBoxes,
+      tipMeshes,
       confettiSystem,
       confettiParticles,
       gameState,
@@ -858,6 +923,74 @@ export default function PipetteSimulator() {
           p.position.toArray(positions, i * 3);
         });
         confettiSystem.geometry.attributes.position.needsUpdate = true;
+      }
+
+      // Check if pipette is hovering over tip box
+      if (pipetteGroup && gameState.selectedPipette && !gameState.hasTip) {
+        const currentTipBox = sceneRef.current.tipBoxes[gameState.selectedPipette.id];
+        if (currentTipBox && currentTipBox.visible) {
+          const tipBox3D = new THREE.Box3().setFromObject(currentTipBox.children[0]);
+          const pipetteShaftPos = new THREE.Vector3();
+          pipetteGroup.getObjectByName('pipetteShaft')?.getWorldPosition(pipetteShaftPos);
+
+          const isOverTipBox =
+            pipetteShaftPos.x > tipBox3D.min.x &&
+            pipetteShaftPos.x < tipBox3D.max.x &&
+            pipetteShaftPos.z > tipBox3D.min.z &&
+            pipetteShaftPos.z < tipBox3D.max.z;
+
+          if (isOverTipBox) {
+            // Convert 3D position to screen coordinates
+            const tipBoxCenter = new THREE.Vector3();
+            tipBox3D.getCenter(tipBoxCenter);
+            tipBoxCenter.project(camera);
+            const x = (tipBoxCenter.x * 0.5 + 0.5) * window.innerWidth;
+            const y = (tipBoxCenter.y * -0.5 + 0.5) * window.innerHeight;
+            
+            setIsHoveringTipBox(true);
+            setTipBoxHoverPosition({ x, y });
+          } else {
+            setIsHoveringTipBox(false);
+            setTipBoxHoverPosition(null);
+          }
+        } else {
+          setIsHoveringTipBox(false);
+          setTipBoxHoverPosition(null);
+        }
+      } else {
+        setIsHoveringTipBox(false);
+        setTipBoxHoverPosition(null);
+      }
+
+      // Check if pipette is hovering over waste bin (for tip ejection)
+      if (pipetteGroup && gameState.hasTip && sceneRef.current.wasteBin) {
+        const binBox = new THREE.Box3().setFromObject(sceneRef.current.wasteBin);
+        const pipettePos = new THREE.Vector3();
+        pipetteGroup.getWorldPosition(pipettePos);
+
+        const isOverWasteBin =
+          pipettePos.x > binBox.min.x &&
+          pipettePos.x < binBox.max.x &&
+          pipettePos.z > binBox.min.z &&
+          pipettePos.z < binBox.max.z;
+
+        if (isOverWasteBin) {
+          // Convert 3D position to screen coordinates
+          const binCenter = new THREE.Vector3();
+          binBox.getCenter(binCenter);
+          binCenter.project(camera);
+          const x = (binCenter.x * 0.5 + 0.5) * window.innerWidth;
+          const y = (binCenter.y * -0.5 + 0.5) * window.innerHeight;
+          
+          setIsHoveringWasteBin(true);
+          setWasteBinHoverPosition({ x, y });
+        } else {
+          setIsHoveringWasteBin(false);
+          setWasteBinHoverPosition(null);
+        }
+      } else {
+        setIsHoveringWasteBin(false);
+        setWasteBinHoverPosition(null);
       }
 
       // Update real-time feedback will be handled by checkInteraction outside
@@ -942,8 +1075,8 @@ export default function PipetteSimulator() {
     return containerBox.containsPoint(tipPos);
   };
 
-  const checkImmersionDepth = (container: Container): string => {
-    if (!sceneRef.current) return '--';
+  const checkImmersionDepth = (container: Container): { depth: number; status: 'correct' | 'incorrect' | 'neutral'; message: string } => {
+    if (!sceneRef.current) return { depth: 0, status: 'neutral', message: '--' };
     const tipPos = getPipetteTipPosition();
     const liquidWorldPos = new THREE.Vector3();
     container.liquidMesh.getWorldPosition(liquidWorldPos);
@@ -951,15 +1084,24 @@ export default function PipetteSimulator() {
     const liquidHeight = (liquidGeom.parameters?.height || 1) as number;
     const liquidSurfaceY = liquidWorldPos.y + (container.liquidMesh.scale.y * liquidHeight) / 2;
     const depth = liquidSurfaceY - tipPos.y;
-    if (depth < 0.05) return 'Not in liquid';
-    if (depth < 0.2) return 'Too Shallow';
-    if (depth > 0.6) return 'Too Deep';
-    return 'Good';
+    // Convert depth from Three.js units to mm (assuming 1 unit = 10mm for display)
+    const depthMm = depth * 10;
+    
+    if (depth < 0.05) {
+      return { depth: 0, status: 'neutral', message: 'Not in liquid' };
+    }
+    if (depth < 0.2) {
+      return { depth: depthMm, status: 'incorrect', message: 'Too Shallow' };
+    }
+    if (depth > 0.6) {
+      return { depth: depthMm, status: 'incorrect', message: 'Too Deep' };
+    }
+    return { depth: depthMm, status: 'correct', message: 'Good' };
   };
 
   const checkInteraction = useCallback(() => {
     if (!sceneRef.current) return;
-    const { pipetteGroup, sourceContainer, destContainer } = sceneRef.current;
+    const { pipetteGroup, sourceContainer, sourceContainer2, destContainer } = sceneRef.current;
 
     // Check angle
     const localUp = new THREE.Vector3(0, 1, 0);
@@ -974,21 +1116,120 @@ export default function PipetteSimulator() {
       },
     }));
 
-    // Check depth
-    const inSource = isInLiquid(sourceContainer);
-    const inDest = isInLiquid(destContainer);
-    let depthStatus = '--';
-    let depthOk: 'correct' | 'incorrect' | 'neutral' = 'neutral';
-    if (inSource || inDest) {
-      depthStatus = checkImmersionDepth(inSource ? sourceContainer : destContainer);
-      depthOk = depthStatus === 'Good' ? 'correct' : 'incorrect';
+    // Check depth - check all containers
+    const tipPos = getPipetteTipPosition();
+    const inSource = sourceContainer && isTipInContainer(tipPos, sourceContainer);
+    const inSource2 = sourceContainer2 ? isTipInContainer(tipPos, sourceContainer2) : false;
+    const inDest = destContainer && isTipInContainer(tipPos, destContainer);
+    
+    let depthResult = { depth: 0, status: 'neutral' as 'correct' | 'incorrect' | 'neutral', message: '--' };
+    
+    if (inSource) {
+      depthResult = checkImmersionDepth(sourceContainer);
+    } else if (inSource2 && sourceContainer2) {
+      depthResult = checkImmersionDepth(sourceContainer2);
+    } else if (inDest) {
+      depthResult = checkImmersionDepth(destContainer);
     }
+    
     setFeedbackStates((prev) => ({
       ...prev,
-      depth: { value: depthStatus, status: depthOk },
+      depth: { 
+        value: depthResult.message === '--' ? '--' : `${depthResult.depth.toFixed(1)}mm`, 
+        status: depthResult.status 
+      },
     }));
+
+    // Check beaker status based on tutorial step
+    if (showInteractionTutorial) {
+      let requiredBeaker: 'water' | 'blueDye' | 'destination' | 'waste' | null = null;
+      let currentBeaker: 'water' | 'blueDye' | 'destination' | 'waste' | 'none' = 'none';
+      
+      // Determine required beaker based on current step
+      if (currentInteractionStep === 2) {
+        // Step 3: Transfer water - need to be in Water beaker first
+        requiredBeaker = 'water';
+      } else if (currentInteractionStep === 3) {
+        // Step 4: Eject tip - need to be over waste bin
+        requiredBeaker = 'waste';
+      } else if (currentInteractionStep === 5) {
+        // Step 6: Transfer blue dye - need to be in Blue Dye beaker
+        requiredBeaker = 'blueDye';
+      } else if (currentInteractionStep === 6) {
+        // Step 7: Mix liquids - need to be in Destination
+        requiredBeaker = 'destination';
+      } else if (currentInteractionStep === 7) {
+        // Step 8: Eject second tip - need to be over waste bin
+        requiredBeaker = 'waste';
+      }
+      
+      // Determine current beaker
+      if (inSource) {
+        currentBeaker = 'water';
+      } else if (inSource2 && sourceContainer2) {
+        currentBeaker = 'blueDye';
+      } else if (inDest) {
+        currentBeaker = 'destination';
+      } else {
+        // Check if over waste bin (using pipetteGroup position like elsewhere)
+        if (sceneRef.current.wasteBin && sceneRef.current.gameState.hasTip) {
+          const binBox = new THREE.Box3().setFromObject(sceneRef.current.wasteBin);
+          const pipettePos = new THREE.Vector3();
+          pipetteGroup.getWorldPosition(pipettePos);
+          const isOverWasteBin =
+            pipettePos.x > binBox.min.x &&
+            pipettePos.x < binBox.max.x &&
+            pipettePos.z > binBox.min.z &&
+            pipettePos.z < binBox.max.z;
+          if (isOverWasteBin) {
+            currentBeaker = 'waste';
+          }
+        }
+      }
+      
+      // Update beaker status
+      if (requiredBeaker) {
+        const isCorrect = currentBeaker === requiredBeaker;
+        const beakerNames: Record<string, string> = {
+          water: 'Water',
+          blueDye: 'Blue Dye',
+          destination: 'Destination',
+          waste: 'Waste',
+        };
+        
+        setFeedbackStates((prev) => ({
+          ...prev,
+          beaker: {
+            value: isCorrect 
+              ? `Correct beaker: ${beakerNames[requiredBeaker]}` 
+              : currentBeaker !== 'none'
+              ? `Incorrect: ${beakerNames[currentBeaker]}`
+              : 'Not in any beaker',
+            status: isCorrect ? 'correct' : 'incorrect',
+          },
+        }));
+      } else {
+        // No beaker required for this step
+        setFeedbackStates((prev) => ({
+          ...prev,
+          beaker: {
+            value: '--',
+            status: 'neutral',
+          },
+        }));
+      }
+    } else {
+      // Not in tutorial mode
+      setFeedbackStates((prev) => ({
+        ...prev,
+        beaker: {
+          value: '--',
+          status: 'neutral',
+        },
+      }));
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [currentInteractionStep, showInteractionTutorial]);
 
   // Real-time feedback check
   useEffect(() => {
@@ -1110,8 +1351,36 @@ export default function PipetteSimulator() {
       ) {
         gameState.hasTip = true;
         pipetteTipMesh.visible = true;
-        pipetteGroup.position.y = 2.5;
-        showFeedback('Tip Attached!', "You're ready to aspirate liquid.", 'correct');
+        // Don't reset pipette position - keep it where it is
+        
+        // Remove one tip from the tip box visually
+        const tips = sceneRef.current.tipMeshes[gameState.selectedPipette.id];
+        if (tips && tips.length > 0) {
+          const tipToRemove = tips.pop(); // Remove last tip
+          if (tipToRemove && tipToRemove.parent) {
+            tipToRemove.parent.remove(tipToRemove);
+            tipToRemove.geometry.dispose();
+            (tipToRemove.material as THREE.Material).dispose();
+          }
+        }
+        
+        // Keep the tip box visible (don't hide it)
+        
+        // Show notification in bottom right
+        setShowTipAttachedNotification(true);
+        setTimeout(() => {
+          setShowTipAttachedNotification(false);
+        }, 3000);
+        
+        // Mark tutorial step as completed
+        if (!tipAttachedStepCompleted) {
+          setTipAttachedStepCompleted(true);
+        } else if (!secondTipAttached) {
+          setSecondTipAttached(true);
+        }
+        
+        setIsHoveringTipBox(false);
+        setTipBoxHoverPosition(null);
       } else {
         showFeedback('Incorrect Position', 'Move the pipette over the correct tip box to attach a tip.', 'error');
       }
@@ -1120,14 +1389,14 @@ export default function PipetteSimulator() {
 
   const ejectTip = () => {
     if (!sceneRef.current) return;
-    const { gameState, wasteContainer, pipetteGroup, pipetteTipMesh } = sceneRef.current;
+    const { gameState, wasteBin, pipetteGroup, pipetteTipMesh } = sceneRef.current;
 
     if (!gameState.hasTip) {
       showFeedback('No Tip', 'There is no tip to eject.', 'error');
       return;
     }
 
-    const binBox = new THREE.Box3().setFromObject(wasteContainer.group);
+    const binBox = new THREE.Box3().setFromObject(wasteBin);
     const pipettePos = new THREE.Vector3();
     pipetteGroup.getWorldPosition(pipettePos);
 
@@ -1141,116 +1410,199 @@ export default function PipetteSimulator() {
       pipetteTipMesh.visible = false;
       gameState.liquidInPipette = 0;
       pipetteTipMesh.tipLiquid.scale.y = 0;
-      showFeedback('Tip Ejected', 'The tip has been discarded correctly in the waste beaker.', 'correct');
+      setPipetteLiquidType(null); // Reset liquid type when tip is ejected
+      
+      // Track tutorial progress
+      if (!firstTipEjected) {
+        setFirstTipEjected(true);
+      } else if (!secondTipEjected) {
+        setSecondTipEjected(true);
+      }
+      
+      setIsHoveringWasteBin(false);
+      setWasteBinHoverPosition(null);
+      showFeedback('Tip Ejected', 'The tip has been discarded correctly in the waste bin.', 'correct');
     } else {
-      showFeedback('Incorrect Position', 'Move over the red waste beaker to eject the tip.', 'error');
+      showFeedback('Incorrect Position', 'Move over the red waste bin to eject the tip.', 'error');
     }
   };
 
-  const aspirateLiquid = () => {
-    if (!sceneRef.current) return;
-    const { gameState, sourceContainer, pipetteTipMesh } = sceneRef.current;
+  // Helper function to check if tip is in a container
+  const isTipInContainer = (tipPos: THREE.Vector3, container: Container): boolean => {
+    if (!container || !container.group) return false;
+    // Use container group to detect even when liquid is empty
+    const containerBox = new THREE.Box3().setFromObject(container.group);
+    // Expand the box slightly to make detection more forgiving
+    containerBox.expandByScalar(0.1);
+    return containerBox.containsPoint(tipPos);
+  };
 
-    const depthStatus = checkImmersionDepth(sourceContainer);
-    if (depthStatus === 'Good') {
-      gameState.liquidInPipette = gameState.targetVolume;
-      gameState.dispensedStop1 = false;
-      const tipLiquidMat = pipetteTipMesh.tipLiquid.material as THREE.MeshStandardMaterial;
-      if (tipLiquidMat && tipLiquidMat.color) {
-        tipLiquidMat.color.set(sourceContainer.currentColor);
-      }
-      animateLiquidTransfer(sourceContainer.liquidMesh, 'out');
-      animateLiquidTransfer(pipetteTipMesh.tipLiquid, 'in');
-      setFeedbackConsole(`✅ Correct angle maintained. ${gameState.targetVolume} µL aspirated successfully!`);
-      showFeedback('Success!', `${gameState.targetVolume} µL aspirated.`, 'correct', true);
-      
-      // Trigger contextual quiz after successful aspiration
-      setTimeout(() => {
-        const contextualQuestions = [
-          {
-            question: 'Why is maintaining the correct angle important while pipetting?',
-            options: [
-              'It looks more professional',
-              'It ensures accurate volume measurement and prevents liquid from clinging to the tip',
-              'It makes pipetting faster',
-              'It prevents the pipette from breaking'
-            ],
-            correct: 1,
-            explanation: 'Correct! Maintaining a vertical angle ensures accurate volume measurement and prevents liquid from clinging to the outside of the tip.'
-          }
-        ];
-        const q = contextualQuestions[Math.floor(Math.random() * contextualQuestions.length)];
-        setContextualQuizQuestion(q);
-        setContextualQuizAnswer(null);
-        setShowContextualQuiz(true);
-      }, 1500);
-    } else {
-      gameState.liquidInPipette = gameState.targetVolume * 0.9;
-      gameState.dispensedStop1 = false;
-      const tipLiquidMat = pipetteTipMesh.tipLiquid.material as THREE.MeshStandardMaterial;
-      if (tipLiquidMat && tipLiquidMat.color) {
-        tipLiquidMat.color.set(sourceContainer.currentColor);
-      }
-      animateLiquidTransfer(sourceContainer.liquidMesh, 'out', 0.9);
-      animateLiquidTransfer(pipetteTipMesh.tipLiquid, 'in', 0.9);
-      setFeedbackConsole(`⚠️ Too deep — reduce immersion depth. Only ${gameState.liquidInPipette.toFixed(1)} µL aspirated.`);
-      
-      // Trigger mistake scenario
-      setTimeout(() => {
-        setMistakeScenario({
-          title: 'Oops! You introduced air bubbles.',
-          question: 'What should you do?',
-          options: [
-            'Continue with the current sample',
-            'Re-aspirate slowly to avoid air bubbles',
-            'Discard everything and start over',
-            'Use a different pipette'
-          ],
-          correct: 1,
-          tip: 'Pro Tip: When immersion depth is incorrect, re-aspirate slowly to avoid introducing air bubbles into your sample.'
-        });
-        setShowMistakeSidebar(true);
-      }, 1000);
-      
-      showFeedback(
-        'Aspiration Error',
-        `Immersion depth is ${depthStatus}. This resulted in aspirating only ${gameState.liquidInPipette.toFixed(1)} µL.`,
-        'error'
-      );
+  const stopPlunger = () => {
+    if (plungerInterval) {
+      clearInterval(plungerInterval);
+      setPlungerInterval(null);
     }
+    
+    if (!sceneRef.current || !activeSourceForAspiration) return;
+    const { gameState, pipetteTipMesh, sourceContainer, sourceContainer2 } = sceneRef.current;
+    
+    // Determine target stop point based on source
+    const isBlueDye = sourceContainer2 && activeSourceForAspiration === sourceContainer2;
+    const targetStop = isBlueDye ? 20 : 80; // Blue dye stops at 20%, Water at 80%
+    const tolerance = 5;
+    
+    // Check if stopped at correct point (±5% tolerance)
+    const stoppedAtCorrectPoint = plungerProgress >= (targetStop - tolerance) && plungerProgress <= (targetStop + tolerance);
+    
+    if (stoppedAtCorrectPoint) {
+      // Success - aspirate based on source
+      const aspirationRatio = isBlueDye ? 0.2 : 0.8; // 20% for blue dye, 80% for water
+      const sourceVolume = 100; // Both sources have exactly 100 µL
+      const aspiratedVolume = sourceVolume * aspirationRatio; // 80 µL for water, 20 µL for blue dye
+      
+      gameState.liquidInPipette = aspiratedVolume;
+      gameState.dispensedStop1 = false;
+      
+      const tipLiquidMat = pipetteTipMesh.tipLiquid.material as THREE.MeshStandardMaterial;
+      if (tipLiquidMat && tipLiquidMat.color) {
+        tipLiquidMat.color.set(activeSourceForAspiration.currentColor);
+      }
+      
+      // Remove aspirated volume from source beaker
+      const volumeToRemove = aspiratedVolume;
+      const volumeRatio = volumeToRemove / activeSourceForAspiration.totalVolume;
+      const currentRatio = activeSourceForAspiration.liquidMesh.scale.y;
+      const newRatio = Math.max(0, currentRatio - volumeRatio);
+      activeSourceForAspiration.liquidMesh.scale.y = newRatio;
+      activeSourceForAspiration.currentVolume -= volumeToRemove;
+      
+      // Hide liquid mesh if empty
+      if (newRatio <= 0) {
+        activeSourceForAspiration.liquidMesh.visible = false;
+    } else {
+        // Update liquid position
+        const originalHeight = activeSourceForAspiration.height;
+        activeSourceForAspiration.liquidMesh.position.y = (originalHeight * newRatio) / 2;
+      }
+      
+      // Show liquid in pipette tip
+      animateLiquidTransfer(pipetteTipMesh.tipLiquid, 'in', aspirationRatio);
+      
+      setFeedbackConsole(`✅ Successfully stopped at ${plungerProgress.toFixed(0)}%! ${aspiratedVolume.toFixed(1)} µL aspirated successfully!`);
+      showFeedback('Success!', `Stopped at ${plungerProgress.toFixed(0)}%. ${aspiratedVolume.toFixed(1)} µL aspirated.`, 'correct', true);
+      
+      // Track liquid type in pipette
+      if (activeSourceForAspiration === sourceContainer) {
+        setPipetteLiquidType('Water');
+        if (!waterTransferred) {
+          setWaterTransferred(true);
+        }
+      } else if (sourceContainer2 && activeSourceForAspiration === sourceContainer2) {
+        setPipetteLiquidType('Blue Dye');
+        if (!blueDyeTransferred) {
+          setBlueDyeTransferred(true);
+        }
+      }
+    } else {
+      // Stopped at wrong point
+      const isBlueDye = sourceContainer2 && activeSourceForAspiration === sourceContainer2;
+      const targetStop = isBlueDye ? 20 : 80;
+      showFeedback('Try Again!', `You stopped at ${plungerProgress.toFixed(0)}%. You need to stop at ${targetStop}% (±5%) for accurate aspiration.`, 'error');
+    }
+    
+    setShowPlungerBar(false);
+    setIsAspirating(false);
+    setPlungerProgress(0);
+    setActiveSourceForAspiration(null);
+  };
+
+  const aspirateLiquid = () => {
+    // This function is now handled by stopPlunger
+    // The actual aspiration happens when user clicks stop at 80%
   };
 
   const dispenseLiquid = (stop: 'stop1' | 'stop2') => {
     if (!sceneRef.current) return;
-    const { gameState, destContainer, pipetteTipMesh, sourceContainer } = sceneRef.current;
+    const { gameState, destContainer, pipetteTipMesh, sourceContainer, sourceContainer2 } = sceneRef.current;
+
+    // Check if in destination beaker
+    const tipPos = getPipetteTipPosition();
+    const inDest = destContainer && isTipInContainer(tipPos, destContainer);
+    
+    if (!inDest) {
+      showFeedback('Incorrect Position', 'Move the pipette tip into the destination beaker to dispense.', 'error');
+      return;
+    }
+
+    // Get the color from the pipette tip (which was set during aspiration)
+    const tipLiquidMat = pipetteTipMesh.tipLiquid.material as THREE.MeshStandardMaterial;
+    const sourceColor = tipLiquidMat?.color?.clone() || sourceContainer.currentColor.clone();
 
     let dispenseAmount = 0;
     if (stop === 'stop1') {
       dispenseAmount = gameState.liquidInPipette * 0.98;
       gameState.liquidInPipette -= dispenseAmount;
       gameState.dispensedStop1 = true;
+      setDispensedAtDestination(true); // Track that P was pressed at destination
       animateLiquidTransfer(pipetteTipMesh.tipLiquid, 'out', 0.98);
-      showFeedback('Dispensed', 'Main volume dispensed. Use blow-out for the rest.', 'correct', true);
+      showFeedback('Dispensed', 'Main volume dispensed. Press B for blow-out.', 'correct', true);
     } else if (stop === 'stop2') {
       dispenseAmount = gameState.liquidInPipette;
       gameState.liquidInPipette = 0;
       gameState.dispensedStop1 = false;
+      setBlownOutAtDestination(true); // Track that B was pressed at destination
+      setPipetteLiquidType(null); // Reset liquid type when fully dispensed
       animateLiquidTransfer(pipetteTipMesh.tipLiquid, 'out', 1);
       showFeedback('Blow-out Complete', 'All liquid dispensed.', 'correct', true);
       triggerConfetti();
     }
 
     if (dispenseAmount > 0) {
-      const sourceColor = sourceContainer.currentColor;
       const destColor = destContainer.currentColor;
-      const mixFactor = Math.min(dispenseAmount / (destContainer.currentVolume + dispenseAmount), 0.1);
-      const newColor = destColor.clone().lerp(sourceColor, mixFactor);
-      destContainer.currentColor.copy(newColor);
-      const destLiquidMat = destContainer.liquidMesh.material as THREE.MeshStandardMaterial;
-      if (destLiquidMat && destLiquidMat.color) {
-        destLiquidMat.color.copy(newColor);
-      }
+      
+      // Update destination beaker volume and visual
       destContainer.currentVolume += dispenseAmount;
+      
+      // Calculate new liquid height ratio based on volume
+      // Use a reference: if 100 µL fills 0.9 of beaker height, calculate ratio
+      const referenceVolume = 100; // µL (full beaker capacity)
+      const referenceRatio = 0.9; // 90% of beaker height represents 100 µL
+      const volumeRatio = Math.min(1.0, (destContainer.currentVolume / referenceVolume) * referenceRatio);
+      
+      // Get the original geometry height (before any scaling)
+      const liquidGeo = destContainer.liquidMesh.geometry as THREE.CylinderGeometry;
+      const originalLiquidHeight = liquidGeo.parameters.height;
+      const scaledHeight = originalLiquidHeight * volumeRatio;
+      
+      // Scale the liquid mesh to show the correct height
+      destContainer.liquidMesh.scale.y = volumeRatio;
+      // Position the liquid at the bottom of the beaker, accounting for the scaled height
+      // The beaker's liquid mesh should be positioned relative to the beaker bottom
+      destContainer.liquidMesh.position.y = scaledHeight / 2;
+      destContainer.liquidMesh.visible = true;
+      
+      // Update liquid material color and appearance
+      const destLiquidMat = destContainer.liquidMesh.material as THREE.MeshStandardMaterial;
+      if (destLiquidMat) {
+        destLiquidMat.opacity = 0.8;
+        
+        // If both liquids are in destination, mix to light blue
+        if (waterTransferred && blueDyeTransferred && destContainer.currentVolume > dispenseAmount) {
+          // Mix to light blue (0x87CEEB)
+          const lightBlue = new THREE.Color(0x87CEEB);
+          const mixFactor = Math.min(dispenseAmount / destContainer.currentVolume, 0.5);
+          const newColor = destColor.clone().lerp(lightBlue, mixFactor);
+          destContainer.currentColor.copy(newColor);
+          setLiquidsMixed(true);
+        } else {
+          // Set color based on source (water or blue dye)
+          destContainer.currentColor.copy(sourceColor);
+        }
+        
+        if (destLiquidMat.color) {
+          destLiquidMat.color.copy(destContainer.currentColor);
+        }
+      }
     }
   };
 
@@ -1290,7 +1642,7 @@ export default function PipetteSimulator() {
 
   const handlePlunger1Click = () => {
     if (!sceneRef.current) return;
-    const { gameState, sourceContainer, destContainer } = sceneRef.current;
+    const { gameState, sourceContainer, sourceContainer2, destContainer } = sceneRef.current;
 
     if (!gameState.selectedPipette) {
       showFeedback('No Pipette', 'Please select a pipette from the panel first.', 'error');
@@ -1301,16 +1653,60 @@ export default function PipetteSimulator() {
       return;
     }
     if (gameState.liquidInPipette === 0) {
-      if (isInLiquid(sourceContainer)) {
-        aspirateLiquid();
-      } else {
-        showFeedback('Incorrect Position', 'Move the pipette tip into the source liquid (dark blue) to aspirate.', 'error');
+      // Check depth status first
+      if (feedbackStates.depth.status !== 'correct') {
+        showFeedback('Depth Not Correct', 'Please adjust the pipette depth to the correct level (green indicator) before plunging.', 'error');
+        return;
       }
+      
+      // Check which source container the tip is in
+      const tipPos = getPipetteTipPosition();
+      const inSource1 = sourceContainer && isTipInContainer(tipPos, sourceContainer);
+      const inSource2 = sourceContainer2 && isTipInContainer(tipPos, sourceContainer2);
+      
+      let activeSource = sourceContainer;
+      if (inSource2 && sourceContainer2) {
+        activeSource = sourceContainer2;
+      } else if (!inSource1 && !inSource2) {
+        showFeedback('Incorrect Position', 'Move the pipette tip into a source liquid to aspirate.', 'error');
+        return;
+      }
+      
+      // Determine target stop point based on source
+      const isBlueDye = sourceContainer2 && activeSource === sourceContainer2;
+      const targetStop = isBlueDye ? 20 : 80; // Blue dye stops at 20%, Water at 80%
+      
+      // Start plunger progress bar from 0% to target stop
+      setActiveSourceForAspiration(activeSource);
+      setIsAspirating(true);
+      setShowPlungerBar(true);
+      setPlungerProgress(0); // Start at 0%
+      setPlungerTargetStop(targetStop); // Store target stop for UI
+      // Reset destination flags when starting new aspiration
+      setDispensedAtDestination(false);
+      setBlownOutAtDestination(false);
+      
+      // Start progress animation - stops automatically at target stop for tutorial
+      const interval = setInterval(() => {
+        setPlungerProgress((prev) => {
+          if (prev >= targetStop) {
+            clearInterval(interval);
+            setPlungerInterval(null); // Clear interval reference
+            return targetStop; // Stop at target stop
+          }
+          // Normal speed progression
+          return prev + 2; // Increase by 2% every 50ms
+        });
+      }, 50);
+      setPlungerInterval(interval);
     } else {
-      if (isInLiquid(destContainer)) {
+      // Check if tip is in destination beaker (use container group, not liquid mesh)
+      const tipPos = getPipetteTipPosition();
+      const inDest = destContainer && isTipInContainer(tipPos, destContainer);
+      if (inDest) {
         dispenseLiquid('stop1');
       } else {
-        showFeedback('Incorrect Position', 'Move the pipette tip into the destination liquid (light blue) to dispense.', 'error');
+        showFeedback('Incorrect Position', 'Move the pipette tip into the destination beaker (light blue) to dispense.', 'error');
       }
     }
   };
@@ -1324,10 +1720,13 @@ export default function PipetteSimulator() {
       return;
     }
     if (gameState.liquidInPipette > 0 && gameState.dispensedStop1) {
-      if (isInLiquid(destContainer)) {
+      // Check if tip is in destination beaker (use container group, not liquid mesh)
+      const tipPos = getPipetteTipPosition();
+      const inDest = destContainer && isTipInContainer(tipPos, destContainer);
+      if (inDest) {
         dispenseLiquid('stop2');
       } else {
-        showFeedback('Incorrect Position', 'Move the pipette tip into the destination liquid for blow-out.', 'error');
+        showFeedback('Incorrect Position', 'Move the pipette tip into the destination beaker for blow-out.', 'error');
       }
     } else if (gameState.liquidInPipette === 0) {
       showFeedback('Pipette Empty', 'Nothing to blow-out.', 'error');
@@ -1342,7 +1741,8 @@ export default function PipetteSimulator() {
     // Increased sensitivity for faster movement
     const stepSize = 0.3;
     gameState.pipetteY += deltaY * stepSize;
-    gameState.pipetteY = Math.max(1.5, Math.min(5, gameState.pipetteY));
+    // Keep pipette above table (tableTopY = 3.7, so minimum should be around 4.5 to stay well above)
+    gameState.pipetteY = Math.max(4.5, Math.min(19, gameState.pipetteY)); // Keep above table, max range up to 19
     pipetteGroup.position.y = gameState.pipetteY;
     
     // Update slider value if it exists
@@ -1610,7 +2010,7 @@ export default function PipetteSimulator() {
           <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full p-8 relative animate-scale-in border-4 border-blue-200">
             <button
               onClick={() => setShowMascotWelcome(false)}
-              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 transition-colors"
+              className="absolute top-4 right-4 text-black hover:text-slate-700 transition-colors"
               aria-label="Close"
             >
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1624,15 +2024,15 @@ export default function PipetteSimulator() {
                 className="w-20 h-20 flex-shrink-0"
               />
               <div className="flex-1">
-                <h2 className="text-2xl font-bold text-slate-900 mb-3">Welcome to the Tutorial!</h2>
-                <p className="text-base text-slate-700 leading-relaxed whitespace-pre-wrap">
+                <h2 className="text-2xl font-bold text-black mb-3">Welcome to the Tutorial!</h2>
+                <p className="text-base text-black leading-relaxed whitespace-pre-wrap">
                   {tutorialScenario.welcomeMessage}
                 </p>
               </div>
             </div>
             <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
-              <h3 className="text-sm font-semibold text-slate-700 mb-2">Your Task:</h3>
-              <div className="text-sm text-slate-900 whitespace-pre-wrap leading-relaxed">
+              <h3 className="text-sm font-semibold text-black mb-2">Your Task:</h3>
+              <div className="text-sm text-black whitespace-pre-wrap leading-relaxed">
                 {tutorialScenario.question}
               </div>
             </div>
@@ -1645,7 +2045,7 @@ export default function PipetteSimulator() {
               }}
               className="mt-6 w-full px-6 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors"
             >
-              Let's Begin!
+              Let&apos;s Begin!
             </button>
           </div>
         </div>
@@ -1687,14 +2087,34 @@ export default function PipetteSimulator() {
         <InteractionTutorialOverlay
           currentStep={currentInteractionStep}
           currentAngle={currentAngle}
+          tipAttached={tipAttachedStepCompleted}
+          waterTransferred={waterTransferred}
+          firstTipEjected={firstTipEjected}
+          secondTipAttached={secondTipAttached}
+          blueDyeTransferred={blueDyeTransferred}
+          liquidsMixed={liquidsMixed}
+          secondTipEjected={secondTipEjected}
+          labContainerRef={labContainerRef}
           onNext={() => {
-            // Only allow next if angle is 0° on the first step
-            if (currentInteractionStep === 0 && currentAngle !== 0) {
-              return; // Don't advance if angle is not 0°
-            }
-            if (currentInteractionStep < 1) {
+            // Only allow next if prerequisites are met
+            if (currentInteractionStep === 0 && currentAngle !== 0) return;
+            if (currentInteractionStep === 1 && !tipAttachedStepCompleted) return;
+            if (currentInteractionStep === 2 && (!waterTransferred || !dispensedAtDestination || !blownOutAtDestination)) return;
+            if (currentInteractionStep === 3 && !firstTipEjected) return;
+            if (currentInteractionStep === 4 && !secondTipAttached) return;
+            if (currentInteractionStep === 5 && (!blueDyeTransferred || !dispensedAtDestination || !blownOutAtDestination)) return;
+            if (currentInteractionStep === 6 && !liquidsMixed) return;
+            if (currentInteractionStep === 7 && !secondTipEjected) return;
+            
+            if (currentInteractionStep < 7) {
+              // Reset destination flags when moving to next step
+              if (currentInteractionStep === 2 || currentInteractionStep === 5) {
+                setDispensedAtDestination(false);
+                setBlownOutAtDestination(false);
+              }
               setCurrentInteractionStep(currentInteractionStep + 1);
             } else {
+              // Tutorial complete
               setShowInteractionTutorial(false);
             }
           }}
@@ -1729,8 +2149,64 @@ export default function PipetteSimulator() {
         <svg className="w-5 h-5 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
         </svg>
-        <span className="text-slate-700 font-semibold">Back to Dashboard</span>
+        <span className="text-black font-semibold">Back to Dashboard</span>
       </button>
+
+      {/* Zoom Controls - Left Side, Outside Canvas */}
+      <div className="fixed top-56 left-4 z-30 bg-white rounded-xl p-3 border-2 border-slate-300 shadow-lg">
+        <div className="flex flex-col items-center gap-2">
+          <button
+            onClick={() => {
+              const newZoom = Math.max(3, zoomLevel - 0.5);
+              setZoomLevel(newZoom);
+              if (sceneRef.current?.camera) {
+                sceneRef.current.camera.position.z = newZoom;
+              }
+            }}
+            className="w-8 h-8 flex items-center justify-center rounded-lg border-2 border-slate-300 bg-white text-black hover:bg-slate-50 hover:border-slate-400 transition-colors"
+            title="Zoom In"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m3-3H7" />
+            </svg>
+          </button>
+          <input
+            type="range"
+            min="3"
+            max="12"
+            step="0.1"
+            value={zoomLevel}
+            onChange={(e) => {
+              const newZoom = parseFloat(e.target.value);
+              setZoomLevel(newZoom);
+              if (sceneRef.current?.camera) {
+                sceneRef.current.camera.position.z = newZoom;
+              }
+            }}
+            className="h-32 w-8"
+            style={{
+              writingMode: 'bt-lr' as React.CSSProperties['writingMode'],
+              WebkitAppearance: 'slider-vertical',
+            }}
+            title={`Zoom: ${zoomLevel.toFixed(1)}`}
+          />
+          <button
+            onClick={() => {
+              const newZoom = Math.min(12, zoomLevel + 0.5);
+              setZoomLevel(newZoom);
+              if (sceneRef.current?.camera) {
+                sceneRef.current.camera.position.z = newZoom;
+              }
+            }}
+            className="w-8 h-8 flex items-center justify-center rounded-lg border-2 border-slate-300 bg-white text-black hover:bg-slate-50 hover:border-slate-400 transition-colors"
+            title="Zoom Out"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM13 10H7" />
+            </svg>
+          </button>
+        </div>
+      </div>
 
       {/* Main Simulation Area */}
       <div
@@ -1799,12 +2275,12 @@ export default function PipetteSimulator() {
                     className="w-12 h-12 flex-shrink-0"
                   />
                   <div className="flex-1">
-                    <p className="text-base text-slate-900 font-medium whitespace-pre-wrap">
+                    <p className="text-base text-black font-medium whitespace-pre-wrap">
                       {tutorialScenario.welcomeMessage}
                     </p>
                     <button
                       onClick={() => setShowMascotWelcome(false)}
-                      className="mt-2 text-xs text-blue-600 hover:text-blue-700 font-semibold"
+                      className="mt-2 text-xs text-black hover:text-slate-700 font-semibold underline"
                     >
                       Got it! →
                     </button>
@@ -1817,8 +2293,8 @@ export default function PipetteSimulator() {
           {/* Current Task - Top */}
           <div id="current-task-area" className="shrink-0 mb-4">
             <div className="bg-white rounded-xl p-4 border-2 border-slate-300 shadow-lg">
-              <h3 className="text-sm font-semibold text-slate-700 mb-2">Current Task:</h3>
-              <div className="text-sm text-slate-900 font-medium whitespace-pre-wrap leading-relaxed">
+              <h3 className="text-sm font-semibold text-black mb-2">Current Task:</h3>
+              <div className="text-sm text-black font-medium whitespace-pre-wrap leading-relaxed">
                 {currentTask}
               </div>
             </div>
@@ -1835,7 +2311,7 @@ export default function PipetteSimulator() {
                     setTutorialSubStep('select-pipette');
                   }
                 }}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-300 bg-white text-sm font-semibold text-slate-700 hover:border-slate-500 hover:text-slate-900 transition-colors"
+                className="flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-300 bg-white text-sm font-semibold text-black hover:border-slate-500 hover:text-black transition-colors"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-7 7-4-4-4 4 8 8 10-10L19 7z" />
@@ -1844,7 +2320,7 @@ export default function PipetteSimulator() {
               </button>
               <button
                 onClick={() => setShowStickyNotesModal(true)}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-300 bg-white text-sm font-semibold text-slate-700 hover:border-slate-500 hover:text-slate-900 transition-colors"
+                className="flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-300 bg-white text-sm font-semibold text-black hover:border-slate-500 hover:text-black transition-colors"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-9 4h7m2 4H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -1863,7 +2339,7 @@ export default function PipetteSimulator() {
                 className={`tab-button font-semibold py-2 px-1 rounded-md text-sm transition-all ${
                   activeTab === 'pipetting'
                     ? 'bg-blue-600 text-white font-bold border-blue-600'
-                    : 'bg-white border border-slate-300 text-slate-700'
+                    : 'bg-white border border-slate-300 text-black'
                 }`}
               >
                 Practice
@@ -1874,7 +2350,7 @@ export default function PipetteSimulator() {
                 className={`tab-button font-semibold py-2 px-1 rounded-md text-sm transition-all ${
                   activeTab === 'quiz'
                     ? 'bg-blue-600 text-white font-bold border-blue-600'
-                    : 'bg-white border border-slate-300 text-slate-700'
+                    : 'bg-white border border-slate-300 text-black'
                 }`}
               >
                 Quiz
@@ -1882,10 +2358,10 @@ export default function PipetteSimulator() {
             </div>
           </div>
 
-          {/* Live Feedback - 3 boxes in a row */}
+          {/* Live Feedback - 4 boxes in a row */}
           <div id="live-feedback" className="shrink-0 mb-4">
-            <h3 className="text-sm font-semibold mb-2 text-slate-700">Live Feedback:</h3>
-            <div className="grid grid-cols-3 gap-2">
+            <h3 className="text-sm font-semibold mb-2 text-black">Live Feedback:</h3>
+            <div className="grid grid-cols-4 gap-2">
               {/* Angle Indicator */}
               <div className="bg-white rounded-lg p-2 border border-slate-300 shadow-sm">
                 <div className="flex flex-col items-center">
@@ -1923,12 +2399,12 @@ export default function PipetteSimulator() {
                       );
                     })()}
                     <div className="absolute inset-0 flex items-center justify-center">
-                      <span className="text-xs font-bold text-slate-900">
+                      <span className="text-xs font-bold text-black">
                         {feedbackStates.angle.value === '--' ? '--' : feedbackStates.angle.value.replace('°', '')}
                       </span>
                     </div>
                   </div>
-                  <div className="text-xs text-slate-600 text-center">Angle</div>
+                  <div className="text-xs text-black text-center">Angle</div>
                 </div>
               </div>
 
@@ -1938,12 +2414,14 @@ export default function PipetteSimulator() {
                   <div className="relative w-10 h-10 mb-1 flex items-end justify-center">
                     {(() => {
                       const depthValue = feedbackStates.depth.value === '--' ? 0 : parseFloat(feedbackStates.depth.value.replace('mm', '')) || 0;
-                      const depthPercent = Math.min(100, (depthValue / 5) * 100);
+                      // Scale depth for visualization: 0-6mm maps to 0-100% (good range is 2-6mm)
+                      const maxDepth = 6;
+                      const depthPercent = Math.min(100, Math.max(0, (depthValue / maxDepth) * 100));
                       const depthColor = feedbackStates.depth.status === 'correct' ? 'bg-green-500' : 
                         feedbackStates.depth.status === 'incorrect' ? 'bg-red-500' : 'bg-slate-400';
                       
                       return (
-                        <div className="w-3 h-10 bg-slate-200 rounded-full overflow-hidden border border-slate-300">
+                        <div className="w-3 h-10 bg-slate-200 rounded-full overflow-hidden border border-slate-300 relative">
                           <div 
                             className={`w-full rounded-full transition-all duration-300 ${depthColor}`}
                             style={{ height: `${depthPercent}%` }}
@@ -1952,7 +2430,15 @@ export default function PipetteSimulator() {
                       );
                     })()}
                   </div>
-                  <div className="text-xs text-slate-600 text-center">Depth</div>
+                  <div className="text-xs text-black text-center font-semibold">
+                    {feedbackStates.depth.value === '--' ? 'Depth' : feedbackStates.depth.value}
+                  </div>
+                  {feedbackStates.depth.status === 'correct' && feedbackStates.depth.value !== '--' && (
+                    <div className="text-[10px] text-green-600 font-semibold mt-0.5">✓ Good</div>
+                  )}
+                  {feedbackStates.depth.status === 'incorrect' && feedbackStates.depth.value !== '--' && (
+                    <div className="text-[10px] text-red-600 font-semibold mt-0.5">✗ Adjust</div>
+                  )}
                 </div>
               </div>
 
@@ -1963,10 +2449,53 @@ export default function PipetteSimulator() {
                     feedbackStates.plunger.status === 'correct' ? 'bg-green-500 animate-pulse' : 
                     feedbackStates.plunger.status === 'incorrect' ? 'bg-red-500' : 'bg-slate-400'
                   }`} />
-                  <div className="text-xs text-slate-600 text-center">Plunger</div>
+                  <div className="text-xs text-black text-center">Plunger</div>
+                </div>
+              </div>
+
+              {/* Beaker Status Indicator */}
+              <div className="bg-white rounded-lg p-2 border border-slate-300 shadow-sm">
+                <div className="flex flex-col items-center">
+                  <div className={`w-3 h-3 rounded-full mb-1 ${
+                    feedbackStates.beaker.status === 'correct' ? 'bg-green-500 animate-pulse' : 
+                    feedbackStates.beaker.status === 'incorrect' ? 'bg-red-500' : 'bg-slate-400'
+                  }`} />
+                  <div className="text-xs text-black text-center font-semibold mb-0.5">Beaker</div>
+                  {feedbackStates.beaker.value !== '--' && (
+                    <div className={`text-[9px] text-center font-semibold mt-0.5 leading-tight ${
+                      feedbackStates.beaker.status === 'correct' ? 'text-green-600' : 
+                      feedbackStates.beaker.status === 'incorrect' ? 'text-red-600' : 
+                      'text-black'
+                    }`}>
+                      {feedbackStates.beaker.status === 'correct' ? '✓' : feedbackStates.beaker.status === 'incorrect' ? '✗' : ''}
+            </div>
+                  )}
                 </div>
               </div>
             </div>
+            
+            {/* Beaker Status Text - Below boxes */}
+            {feedbackStates.beaker.value !== '--' && (
+              <div className={`mt-2 p-2 rounded-lg border-2 text-xs font-semibold text-center ${
+                feedbackStates.beaker.status === 'correct' 
+                  ? 'bg-green-50 border-green-300 text-green-700' 
+                  : feedbackStates.beaker.status === 'incorrect'
+                  ? 'bg-red-50 border-red-300 text-black'
+                  : 'bg-slate-50 border-slate-300 text-black'
+              }`}>
+                {feedbackStates.beaker.value}
+              </div>
+            )}
+            
+            {/* Live Feedback - Pipette Contents */}
+            {sceneRef.current && sceneRef.current.gameState.liquidInPipette > 0 && pipetteLiquidType && (
+              <div className="mt-4 bg-white rounded-lg p-3 border border-slate-300 shadow-sm">
+                <div className="text-xs font-semibold text-black mb-1">Pipette Contains:</div>
+                <div className="text-sm font-bold text-black">
+                  {pipetteLiquidType}: {sceneRef.current.gameState.liquidInPipette.toFixed(1)} µL
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Scrollable Content Area */}
@@ -1974,9 +2503,9 @@ export default function PipetteSimulator() {
           {/* Pipetting Module */}
           {activeTab === 'pipetting' && (
             <div className="bg-white p-4 rounded-lg shadow-lg border border-slate-300 mb-4">
-              <h2 className="text-xl font-semibold mb-4 text-slate-900">Pipetting Practice</h2>
+              <h2 className="text-xl font-semibold mb-4 text-black">Pipetting Practice</h2>
               <div className="mb-4">
-                <label htmlFor="volume-select" className="block text-sm font-medium mb-2 text-slate-700">
+                <label htmlFor="volume-select" className="block text-sm font-medium mb-2 text-black">
                   Target Volume (μL)
                 </label>
                 <div className="flex items-center space-x-2">
@@ -1999,7 +2528,7 @@ export default function PipetteSimulator() {
                 </div>
               </div>
               <div className="mb-4">
-                <h3 className="text-md font-medium mb-2 text-slate-700">Select Pipette:</h3>
+                <h3 className="text-md font-medium mb-2 text-black">Select Pipette:</h3>
                 <div id="pipette-selection" className="grid grid-cols-2 gap-2 relative">
                   {pipettes.map((pipette) => {
                     const isSelected = selectedPipetteId === pipette.id;
@@ -2068,9 +2597,9 @@ export default function PipetteSimulator() {
           {/* Quiz Module */}
           {activeTab === 'quiz' && (
             <div className="bg-white p-4 rounded-lg shadow-lg border border-slate-300 mb-4">
-              <h2 className="text-xl font-semibold mb-4 text-slate-900">Pipetting Quiz</h2>
-              <p className="text-sm text-slate-600 mb-4">Test your knowledge of proper pipetting techniques.</p>
-              <p className="text-sm text-center text-slate-500 italic mb-4">
+              <h2 className="text-xl font-semibold mb-4 text-black">Pipetting Quiz</h2>
+              <p className="text-sm text-black mb-4">Test your knowledge of proper pipetting techniques.</p>
+              <p className="text-sm text-center text-black italic mb-4">
                 You got this! Every question is a chance to learn.
               </p>
               <div className="space-y-3">
@@ -2094,36 +2623,36 @@ export default function PipetteSimulator() {
 
           {/* Control Toolkit - Bottom Right Section */}
           <div className="shrink-0 pt-4 border-t border-slate-300">
-            <h3 className="text-lg font-semibold mb-3 text-slate-900">Controls</h3>
+            <h3 className="text-lg font-semibold mb-3 text-black">Controls</h3>
             
             {/* Actions - Above Controls */}
             <div className="mb-4">
-              <h4 className="text-sm font-semibold mb-2 text-slate-700">Actions</h4>
+              <h4 className="text-sm font-semibold mb-2 text-black">Actions</h4>
               <div className="space-y-2">
                 <div id="plunger-controls" className="space-y-2">
-                  <button
-                    id="plungerStop1Btn"
-                    onClick={handlePlunger1Click}
-                    className="control-btn bg-pink-500 hover:bg-pink-600 text-white rounded-lg w-full h-12 text-sm font-semibold shadow-md text-center"
-                    title="Plunger (P)"
-                  >
-                    Plunger (P)
-                    <div className="text-xs font-normal">Aspirate/Dispense</div>
-                  </button>
-                  <button
-                    id="plungerStop2Btn"
-                    onClick={handlePlunger2Click}
-                    className="control-btn bg-purple-600 hover:bg-purple-700 text-white rounded-lg w-full h-12 text-sm font-semibold shadow-md text-center"
-                    title="Blow-out (B)"
-                  >
-                    Blow-out (B)
-                    <div className="text-xs font-normal">Stop 2</div>
-                  </button>
+                <button
+                  id="plungerStop1Btn"
+                  onClick={handlePlunger1Click}
+                  className="control-btn bg-pink-500 hover:bg-pink-600 text-white rounded-lg w-full h-12 text-sm font-semibold shadow-md text-center"
+                  title="Plunger (P)"
+                >
+                  Plunger (P)
+                  <div className="text-xs font-normal">Aspirate/Dispense</div>
+                </button>
+                <button
+                  id="plungerStop2Btn"
+                  onClick={handlePlunger2Click}
+                  className="control-btn bg-purple-600 hover:bg-purple-700 text-white rounded-lg w-full h-12 text-sm font-semibold shadow-md text-center"
+                  title="Blow-out (B)"
+                >
+                  Blow-out (B)
+                  <div className="text-xs font-normal">Stop 2</div>
+                </button>
                 </div>
                 <button
                   id="ejectTipBtn"
                   onClick={ejectTip}
-                  className="control-btn bg-white border-2 border-slate-400 hover:border-slate-600 text-slate-900 rounded-lg w-full h-10 text-sm font-semibold shadow-md text-center"
+                  className="control-btn bg-white border-2 border-slate-400 hover:border-slate-600 text-black rounded-lg w-full h-10 text-sm font-semibold shadow-md text-center"
                 >
                   Eject Tip
                 </button>
@@ -2132,7 +2661,7 @@ export default function PipetteSimulator() {
 
             {/* Movement Controls */}
             <div id="movement-controls" className="bg-white p-4 rounded-lg border border-slate-300">
-              <h4 className="text-sm font-semibold mb-3 text-slate-700">Movement</h4>
+              <h4 className="text-sm font-semibold mb-3 text-black">Movement</h4>
               
               {/* Row 1: Arrow Keys | Height */}
               <div className="flex items-center gap-4 justify-center mb-4">
@@ -2140,43 +2669,43 @@ export default function PipetteSimulator() {
                 <div className="flex flex-col items-center gap-2">
                   <div className="text-xs font-bold text-slate-700 uppercase">Arrow Keys</div>
                   <div className="grid grid-cols-3 gap-2 w-32">
+                  <div></div>
+                  <button
+                    id="arrowUp"
+                    onClick={() => movePipetteHorizontal(0, -0.2)}
+                    className="d-pad-btn bg-slate-200 hover:bg-slate-300 text-slate-900 p-2 rounded-lg shadow-md text-lg font-semibold"
+                    title="Move Forward (↑)"
+                  >
+                    ↑
+                  </button>
+                  <div></div>
+                  <button
+                    id="arrowLeft"
+                    onClick={() => movePipetteHorizontal(-0.2, 0)}
+                    className="d-pad-btn bg-slate-200 hover:bg-slate-300 text-slate-900 p-2 rounded-lg shadow-md text-lg font-semibold"
+                    title="Move Left (←)"
+                  >
+                    ←
+                  </button>
                     <div></div>
-                    <button
-                      id="arrowUp"
-                      onClick={() => movePipetteHorizontal(0, -0.2)}
-                      className="d-pad-btn bg-slate-200 hover:bg-slate-300 text-slate-900 p-2 rounded-lg shadow-md text-lg font-semibold"
-                      title="Move Forward (↑)"
-                    >
-                      ↑
-                    </button>
-                    <div></div>
-                    <button
-                      id="arrowLeft"
-                      onClick={() => movePipetteHorizontal(-0.2, 0)}
-                      className="d-pad-btn bg-slate-200 hover:bg-slate-300 text-slate-900 p-2 rounded-lg shadow-md text-lg font-semibold"
-                      title="Move Left (←)"
-                    >
-                      ←
-                    </button>
-                    <div></div>
-                    <button
-                      id="arrowRight"
-                      onClick={() => movePipetteHorizontal(0.2, 0)}
-                      className="d-pad-btn bg-slate-200 hover:bg-slate-300 text-slate-900 p-2 rounded-lg shadow-md text-lg font-semibold"
-                      title="Move Right (→)"
-                    >
-                      →
-                    </button>
-                    <div></div>
-                    <button
-                      id="arrowDown"
-                      onClick={() => movePipetteHorizontal(0, 0.2)}
-                      className="d-pad-btn bg-slate-200 hover:bg-slate-300 text-slate-900 p-2 rounded-lg shadow-md text-lg font-semibold"
-                      title="Move Backward (↓)"
-                    >
-                      ↓
-                    </button>
-                    <div></div>
+                  <button
+                    id="arrowRight"
+                    onClick={() => movePipetteHorizontal(0.2, 0)}
+                    className="d-pad-btn bg-slate-200 hover:bg-slate-300 text-slate-900 p-2 rounded-lg shadow-md text-lg font-semibold"
+                    title="Move Right (→)"
+                  >
+                    →
+                  </button>
+                  <div></div>
+                  <button
+                    id="arrowDown"
+                    onClick={() => movePipetteHorizontal(0, 0.2)}
+                    className="d-pad-btn bg-slate-200 hover:bg-slate-300 text-slate-900 p-2 rounded-lg shadow-md text-lg font-semibold"
+                    title="Move Backward (↓)"
+                  >
+                    ↓
+                  </button>
+                  <div></div>
                   </div>
                 </div>
                 
@@ -2187,16 +2716,16 @@ export default function PipetteSimulator() {
                 <div className="flex flex-col items-center gap-2">
                   <div className="text-center mb-1">
                     <div className="text-xs font-bold text-slate-700 uppercase">Height</div>
-                    <div className="text-xs text-slate-500">W / S</div>
+                    <div className="text-xs text-black">W / S</div>
                   </div>
                   <div className="relative h-32 w-8 flex items-center justify-center">
                     <input
                       type="range"
                       id="heightSlider"
-                      min="1.5"
-                      max="5"
-                      step="0.05"
-                      defaultValue="3"
+                      min="4.5"
+                      max="19"
+                      step="0.1"
+                      defaultValue="5"
                       className="h-32 w-8"
                       style={{
                         writingMode: 'bt-lr' as React.CSSProperties['writingMode'],
@@ -2268,7 +2797,7 @@ export default function PipetteSimulator() {
                       style={{ WebkitAppearance: 'textfield', MozAppearance: 'textfield' }}
                     />
                     <span className={`absolute right-1 top-1/2 -translate-y-1/2 pointer-events-none text-sm font-semibold ${
-                      currentAngle === 0 ? 'text-green-600' : 'text-slate-500'
+                      currentAngle === 0 ? 'text-green-600' : 'text-black'
                     }`}>°</span>
                   </div>
                 </div>
@@ -2277,6 +2806,98 @@ export default function PipetteSimulator() {
           </div>
         </div>
       </div>
+
+      {/* Tip Attached Notification - Bottom Right */}
+      {showTipAttachedNotification && (
+        <div className="fixed bottom-4 right-4 z-[200] bg-green-500 text-white px-6 py-4 rounded-lg shadow-2xl animate-fade-in">
+          <div className="flex items-center gap-3">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+            <span className="font-semibold text-lg">Tip Attached!</span>
+          </div>
+        </div>
+      )}
+
+      {/* Attach Tip Button - Shows when hovering over tip box */}
+      {isHoveringTipBox && tipBoxHoverPosition && !sceneRef.current?.gameState.hasTip && (
+        <div
+          className="fixed z-[200] pointer-events-auto"
+          style={{
+            left: `${tipBoxHoverPosition.x}px`,
+            top: `${tipBoxHoverPosition.y - 60}px`,
+            transform: 'translateX(-50%)',
+          }}
+        >
+          <button
+            onClick={attachTip}
+            className="bg-[#D8F878] text-[#001C3D] font-semibold px-6 py-3 rounded-lg shadow-2xl hover:brightness-110 transition-all border-2 border-[#001C3D]"
+          >
+            Attach Tip
+          </button>
+        </div>
+      )}
+
+      {/* Throw Tip Button - Shows when hovering over waste bin */}
+      {isHoveringWasteBin && wasteBinHoverPosition && sceneRef.current?.gameState.hasTip && (
+        <div
+          className="fixed z-[200] pointer-events-auto"
+          style={{
+            left: `${wasteBinHoverPosition.x}px`,
+            top: `${wasteBinHoverPosition.y - 60}px`,
+            transform: 'translateX(-50%)',
+          }}
+        >
+          <button
+            onClick={ejectTip}
+            className="bg-red-500 text-white font-semibold px-6 py-3 rounded-lg shadow-2xl hover:brightness-110 transition-all border-2 border-red-700"
+          >
+            Throw Tip
+          </button>
+        </div>
+      )}
+
+      {/* Plunger Bar - Shows when plunging */}
+      {showPlungerBar && (
+        <div className="fixed bottom-20 left-1/2 transform -translate-x-1/2 z-[200] bg-white/95 backdrop-blur-xl rounded-xl p-6 shadow-2xl border-2 border-blue-500 min-w-[400px]">
+          <div className="text-center mb-4">
+            <h3 className="text-lg font-bold text-slate-900 mb-2">Plunger Progress</h3>
+            <p className="text-sm text-black">
+              {plungerProgress >= plungerTargetStop 
+                ? `Paused at ${plungerTargetStop}% - Click Stop to confirm` 
+                : `Plunger will pause at ${plungerTargetStop}% - Click Stop when it pauses`}
+            </p>
+          </div>
+          <div className="relative w-full h-12 bg-slate-200 rounded-full overflow-hidden border-2 border-slate-300 mb-4">
+            <div 
+              className="absolute top-0 left-0 h-full bg-gradient-to-r from-blue-500 to-blue-600 transition-all duration-100 ease-linear"
+              style={{ width: `${plungerProgress}%` }}
+            />
+            <div className="absolute inset-0 flex items-center justify-center">
+              <span className="text-lg font-bold text-slate-900 z-10">
+                {plungerProgress.toFixed(1)}%
+              </span>
+            </div>
+            {/* Target stop marker */}
+            <div 
+              className="absolute top-0 bottom-0 w-0.5 bg-green-500 z-20"
+              style={{ left: `${plungerTargetStop}%` }}
+            />
+          </div>
+          <div className="flex justify-center">
+            <button
+              onClick={stopPlunger}
+              className={`font-semibold px-8 py-3 rounded-lg shadow-lg hover:brightness-110 transition-all border-2 ${
+                plungerProgress >= plungerTargetStop
+                  ? 'bg-green-500 text-white border-green-700 animate-pulse'
+                  : 'bg-red-500 text-white border-red-700'
+              }`}
+            >
+              {plungerProgress >= plungerTargetStop ? `Click to Confirm Stop at ${plungerTargetStop}%` : 'Stop'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Feedback Modal */}
       {showFeedbackModal && (
@@ -2419,21 +3040,21 @@ export default function PipetteSimulator() {
                       if (parent) {
                         const emoji = quizData.score / quizData.questions.length >= 0.7 ? '🎉' : '💪';
                         const message = quizData.score / quizData.questions.length >= 0.7 ? 'Great job!' : 'Keep practicing!';
-                        parent.innerHTML = `<div class="text-gray-400 text-center p-8"><p class="text-lg">${emoji}</p><p class="text-sm mt-2">${message}</p></div>`;
+                        parent.innerHTML = `<div class="text-black text-center p-8"><p class="text-lg">${emoji}</p><p class="text-sm mt-2">${message}</p></div>`;
                       }
                     }}
                   />
                 </div>
-                <p id="quiz-results-encouragement" className="text-sm text-gray-600 mb-6 px-4">
+                <p id="quiz-results-encouragement" className="text-sm text-black mb-6 px-4">
                   {selectedMeme.text}
                 </p>
               </>
             ) : (
               <div className="mb-6">
                 <div className="w-full max-w-xs mx-auto h-60 bg-gray-100 rounded-md flex items-center justify-center mb-4">
-                  <p className="text-gray-400 text-lg">🎉</p>
+                  <p className="text-black text-lg">🎉</p>
                 </div>
-                <p className="text-sm text-gray-600 mb-6 px-4">
+                <p className="text-sm text-black mb-6 px-4">
                   {quizData.score === quizData.questions.length 
                     ? "Perfect score! You're a pipetting master!" 
                     : "Great effort! Keep practicing to improve your skills."}
@@ -2526,12 +3147,12 @@ export default function PipetteSimulator() {
           <div className="bg-white w-full max-w-4xl rounded-3xl border-4 border-slate-200 shadow-2xl relative">
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
               <div>
-                <p className="text-sm uppercase tracking-wide text-slate-500 font-semibold">Sticky notes</p>
-                <h3 className="text-2xl font-semibold text-slate-900">Pin simulation insights</h3>
+                <p className="text-sm uppercase tracking-wide text-black font-semibold">Sticky notes</p>
+                <h3 className="text-2xl font-semibold text-black">Pin simulation insights</h3>
               </div>
               <button
                 onClick={() => setShowStickyNotesModal(false)}
-                className="text-slate-400 hover:text-slate-600 transition-colors"
+                className="text-black hover:text-slate-700 transition-colors"
                 aria-label="Close sticky notes"
               >
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2543,7 +3164,7 @@ export default function PipetteSimulator() {
             <div className="p-6 space-y-5">
               <div className="flex flex-col lg:flex-row gap-4">
                 <div className="flex-1 space-y-3">
-                  <label className="text-sm font-semibold text-slate-700">Pick a color</label>
+                  <label className="text-sm font-semibold text-black">Pick a color</label>
                   <div className="flex gap-3">
                     {Object.entries(STICKY_NOTE_COLORS).map(([key, palette]) => (
                       <button
@@ -2559,7 +3180,7 @@ export default function PipetteSimulator() {
                   </div>
                 </div>
                 <div className="flex-2 space-y-2">
-                  <label htmlFor="sticky-note-content" className="text-sm font-semibold text-slate-700">
+                  <label htmlFor="sticky-note-content" className="text-sm font-semibold text-black">
                     Write a note
                   </label>
                   <textarea
@@ -2568,10 +3189,10 @@ export default function PipetteSimulator() {
                     onChange={(e) => setNoteContent(e.target.value)}
                     maxLength={250}
                     rows={3}
-                    className="w-full rounded-2xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-300"
+                    className="w-full rounded-2xl border border-slate-300 bg-slate-50 px-4 py-3 text-black focus:outline-none focus:ring-2 focus:ring-slate-300"
                     placeholder="Example: Pre-wet tips twice before aspirating viscous buffers."
                   />
-                  <div className="flex items-center justify-between text-xs text-slate-500">
+                  <div className="flex items-center justify-between text-xs text-black">
                     <span>{noteContent.length}/250</span>
                     {noteError && <span className="text-red-500">{noteError}</span>}
                   </div>
@@ -2589,7 +3210,7 @@ export default function PipetteSimulator() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 max-h-[420px] overflow-y-auto pr-1">
                 {stickyNotes.length === 0 ? (
-                  <div className="col-span-full text-center text-slate-500 text-sm py-10 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                  <div className="col-span-full text-center text-black text-sm py-10 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
                     No sticky notes yet. Add your first insight to remember pro moves.
                   </div>
                 ) : (
@@ -2623,15 +3244,15 @@ export default function PipetteSimulator() {
           <div className="bg-white w-full max-w-3xl rounded-3xl border-4 border-slate-200 shadow-2xl relative">
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
               <div>
-                <p className="text-sm uppercase tracking-wide text-slate-500 font-semibold">Select pipette</p>
-                <h3 className="text-2xl font-semibold text-slate-900">Color-coded pipette families</h3>
-                <p className="text-sm text-slate-600">
+                <p className="text-sm uppercase tracking-wide text-black font-semibold">Select pipette</p>
+                <h3 className="text-2xl font-semibold text-black">Color-coded pipette families</h3>
+                <p className="text-sm text-black">
                   Choose the pipette that matches your target volume. Tip color updates instantly.
                 </p>
               </div>
               <button
                 onClick={() => setShowPipettePalette(false)}
-                className="text-slate-400 hover:text-slate-600 transition-colors"
+                className="text-black hover:text-slate-700 transition-colors"
                 aria-label="Close pipette palette"
               >
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2659,9 +3280,9 @@ export default function PipetteSimulator() {
                     style={{ backgroundColor: `#${pipette.color.toString(16).padStart(6, '0')}` }}
                   />
                   <div>
-                    <p className="text-xl font-semibold text-slate-900">{pipette.name}</p>
-                    <p className="text-sm text-slate-600">{pipette.min} - {pipette.max} µL</p>
-                    <p className="text-xs text-slate-500 mt-1">Tap to equip. Tip will glow in this color.</p>
+                    <p className="text-xl font-semibold text-black">{pipette.name}</p>
+                    <p className="text-sm text-black">{pipette.min} - {pipette.max} µL</p>
+                    <p className="text-xs text-black mt-1">Tap to equip. Tip will glow in this color.</p>
                   </div>
                 </button>
               ))}
@@ -2681,7 +3302,7 @@ export default function PipetteSimulator() {
                   setShowMistakeSidebar(false);
                   setMistakeScenario(null);
                 }}
-                className="text-gray-500 hover:text-gray-700 text-2xl"
+                className="text-black hover:text-slate-700 text-2xl"
               >
                 ×
               </button>

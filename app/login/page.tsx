@@ -10,7 +10,8 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const { signIn, user, userProfile, loading: authLoading } = useAuth();
+  const [guestLoading, setGuestLoading] = useState(false);
+  const { signIn, signInAsGuest, user, userProfile, loading: authLoading } = useAuth();
   const router = useRouter();
 
   // Handle redirect after successful login
@@ -36,6 +37,18 @@ export default function LoginPage() {
     } catch (err: any) {
       setError(err.message || 'Failed to sign in');
       setLoading(false);
+    }
+  };
+
+  const handleGuestSignIn = async () => {
+    setError('');
+    try {
+      setGuestLoading(true);
+      await signInAsGuest();
+      // Guest users will be redirected to /home automatically via useEffect
+    } catch (err: any) {
+      setError(err.message || 'Failed to sign in as guest');
+      setGuestLoading(false);
     }
   };
 
@@ -94,12 +107,28 @@ export default function LoginPage() {
 
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || guestLoading}
               className="w-full bg-gradient-to-r from-[#9448B0] to-[#332277] text-white font-bold py-3 rounded-xl hover:shadow-lg transform hover:scale-105 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? 'Signing In...' : 'Sign In'}
             </button>
           </form>
+
+          <div className="mt-6">
+            <div className="relative flex items-center mb-4">
+              <div className="flex-grow border-t border-white/20"></div>
+              <span className="px-4 text-gray-300 text-sm">or</span>
+              <div className="flex-grow border-t border-white/20"></div>
+            </div>
+
+            <button
+              onClick={handleGuestSignIn}
+              disabled={loading || guestLoading}
+              className="w-full bg-white/10 backdrop-blur-sm border border-white/20 text-white font-semibold py-3 rounded-xl hover:bg-white/20 hover:border-white/30 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {guestLoading ? 'Signing In...' : 'Sign in as Guest'}
+            </button>
+          </div>
 
           <div className="mt-6 text-center">
             <p className="text-gray-300">

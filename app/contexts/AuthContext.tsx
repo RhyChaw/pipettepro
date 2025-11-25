@@ -42,6 +42,7 @@ interface AuthContextType {
   loading: boolean;
   signUp: (email: string, password: string) => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
+  signInAsGuest: () => Promise<void>;
   logOut: () => Promise<void>;
   updateUserProfile: (profile: Partial<UserProfile>) => Promise<void>;
 }
@@ -93,6 +94,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await signInWithEmailAndPassword(auth, email, password);
   };
 
+  const signInAsGuest = async () => {
+    // Automatically sign in with guest credentials
+    await signInWithEmailAndPassword(auth, 'rhychaw21@gmail.com', '12345678@Rc');
+  };
+
   const logOut = async () => {
     await signOut(auth);
     setUserProfile(null);
@@ -126,6 +132,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         loading,
         signUp,
         signIn,
+        signInAsGuest,
         logOut,
         updateUserProfile,
       }}
